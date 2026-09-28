@@ -6899,7 +6899,9 @@ func TestBuildStatefulSet_WithPlugins_InitPluginsContainer(t *testing.T) {
 		t.Errorf("init-plugins NPM_CONFIG_CACHE = %q, want /home/openclaw/.cache/npm", envMap["NPM_CONFIG_CACHE"])
 	}
 
-	// Should have data, .local and .cache subpath mounts, plus plugins-tmp.
+	// The plugin installer uses the image's sticky /tmp. A Kubernetes emptyDir
+	// mounted there becomes 2777 under fsGroup and fails OpenClaw's secure
+	// temporary-workspace ancestry check.
 	// `data` is mounted at three different paths, so check (name, path)
 	// tuples explicitly rather than going through assertVolumeMount (which
 	// stops at the first name match).
@@ -6912,10 +6914,14 @@ func TestBuildStatefulSet_WithPlugins_InitPluginsContainer(t *testing.T) {
 		{"data", "/home/openclaw/.openclaw"},
 		{"data", "/home/openclaw/.local"},
 		{"data", "/home/openclaw/.cache"},
-		{"plugins-tmp", "/tmp"},
 	} {
 		if !have[want] {
 			t.Errorf("missing volume mount %s at %s", want.name, want.path)
+		}
+	}
+	for _, mount := range pluginsContainer.VolumeMounts {
+		if mount.MountPath == "/tmp" {
+			t.Error("init-plugins must not mask the image's sticky /tmp")
 		}
 	}
 
@@ -6999,17 +7005,14 @@ func TestBuildStatefulSet_WithPlugins_EnvAndEnvFromPropagated(t *testing.T) {
 	}
 }
 
-func TestBuildStatefulSet_WithPlugins_PluginsTmpVolume(t *testing.T) {
+func TestBuildStatefulSet_WithPlugins_NoPluginsTmpVolume(t *testing.T) {
 	instance := newTestInstance("plugins-vol")
 	instance.Spec.Plugins = []string{"some-plugin"}
 
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	pluginsTmpVol := findVolume(sts.Spec.Template.Spec.Volumes, "plugins-tmp")
-	if pluginsTmpVol == nil {
-		t.Fatal("plugins-tmp volume not found")
-	}
-	if pluginsTmpVol.EmptyDir == nil {
-		t.Error("plugins-tmp volume should be emptyDir")
+	if pluginsTmpVol != nil {
+		t.Error("plugins-tmp volume must not mask the image's sticky /tmp")
 	}
 }
 

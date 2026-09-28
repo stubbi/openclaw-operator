@@ -1395,7 +1395,6 @@ func buildPluginsInitContainer(instance *openclawv1alpha1.OpenClawInstance) *cor
 		{Name: "data", MountPath: "/home/openclaw/.openclaw"},
 		{Name: "data", MountPath: "/home/openclaw/.local", SubPath: ".local"},
 		{Name: "data", MountPath: "/home/openclaw/.cache", SubPath: ".cache"},
-		{Name: "plugins-tmp", MountPath: "/tmp"},
 	}
 
 	env := []corev1.EnvVar{
@@ -2515,16 +2514,6 @@ func buildVolumes(instance *openclawv1alpha1.OpenClawInstance, skillPacks *Resol
 	if len(instance.Spec.Skills) > 0 || hasWorkspaceSkills(instance) {
 		volumes = append(volumes, corev1.Volume{
 			Name: "skills-tmp",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
-			},
-		})
-	}
-
-	// Plugins-tmp volume for plugins init container
-	if len(instance.Spec.Plugins) > 0 {
-		volumes = append(volumes, corev1.Volume{
-			Name: "plugins-tmp",
 			VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
