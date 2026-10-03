@@ -55,7 +55,7 @@ func BuildConfigMapFromBytes(instance *openclawv1alpha1.OpenClawInstance, baseCo
 		configBytes = []byte("{}")
 	}
 
-	// Enrichment pipeline: gateway mode -> OTel metrics -> gateway auth -> tailscale -> browser -> gateway bind -> trusted proxies -> control UI origins -> skill packs
+	// Enrichment pipeline: gateway mode -> OTel metrics -> gateway auth -> tailscale -> browser -> gateway bind -> MCP Apps sandbox port -> trusted proxies -> control UI origins -> skill packs
 	if enriched, err := enrichConfigWithGatewayMode(configBytes); err == nil {
 		configBytes = enriched
 	}
@@ -81,6 +81,9 @@ func BuildConfigMapFromBytes(instance *openclawv1alpha1.OpenClawInstance, baseCo
 		}
 	}
 	if enriched, err := enrichConfigWithGatewayBind(configBytes, instance); err == nil {
+		configBytes = enriched
+	}
+	if enriched, err := enrichConfigWithMcpAppsSandboxPort(configBytes, instance); err == nil {
 		configBytes = enriched
 	}
 	if enriched, err := enrichConfigWithTrustedProxies(configBytes); err == nil {
@@ -506,6 +509,51 @@ func enrichConfigWithGatewayBind(configJSON []byte, instance *openclawv1alpha1.O
 	return json.Marshal(config)
 }
 
+// enrichConfigWithMcpAppsSandboxPort pins mcp.apps.sandboxPort to
+// McpAppsSandboxPort when the user enabled MCP Apps without choosing a port.
+//
+// OpenClaw starts the sandbox listener on "gateway port plus one" by default.
+// With the gateway proxy sidecar enabled that port (18790) is GatewayProxyPort,
+// which nginx already holds on 0.0.0.0, so the listener fails with
+// "Address already in use" (#615). Pinning the port also gives the proxy
+// sidecar and the Service a fixed loopback target to forward to.
+//
+// The key is only written when mcp.apps.enabled is true so the config of
+// OpenClaw versions that predate MCP Apps is never touched. If the user has
+// already set mcp.apps.sandboxPort, or the gateway proxy is disabled (nothing
+// occupies gateway+1), the config is returned unchanged (user override wins).
+func enrichConfigWithMcpAppsSandboxPort(configJSON []byte, instance *openclawv1alpha1.OpenClawInstance) ([]byte, error) {
+	if !IsGatewayProxyEnabled(instance) {
+		return configJSON, nil
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(configJSON, &config); err != nil {
+		return configJSON, nil // not a JSON object, return unchanged
+	}
+
+	mcp, _ := config["mcp"].(map[string]interface{})
+	if mcp == nil {
+		return configJSON, nil
+	}
+	apps, _ := mcp["apps"].(map[string]interface{})
+	if apps == nil {
+		return configJSON, nil
+	}
+	if enabled, _ := apps["enabled"].(bool); !enabled {
+		return configJSON, nil
+	}
+	if _, ok := apps["sandboxPort"]; ok {
+		return configJSON, nil
+	}
+
+	apps["sandboxPort"] = McpAppsSandboxPort
+	mcp["apps"] = apps
+	config["mcp"] = mcp
+
+	return json.Marshal(config)
+}
+
 // HasGatewayBindConflict returns true when the gateway proxy is disabled but
 // the user has manually set gateway.bind to loopback in their config JSON.
 // This combination makes the pod unreachable because nothing is listening on
@@ -724,6 +772,10 @@ stream {
         listen 0.0.0.0:%d;
         proxy_pass 127.0.0.1:%d;
     }
+    server {
+        listen 0.0.0.0:%d;
+        proxy_pass 127.0.0.1:%d;
+    }
 }
-`, GatewayProxyPort, GatewayPort, CanvasProxyPort, CanvasPort)
+`, GatewayProxyPort, GatewayPort, CanvasProxyPort, CanvasPort, McpAppsSandboxProxyPort, McpAppsSandboxPort)
 }

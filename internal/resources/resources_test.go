@@ -356,8 +356,8 @@ func TestBuildStatefulSet_Defaults(t *testing.T) {
 	}
 
 	// Ports (gateway, canvas - metrics port is on the OTel collector sidecar)
-	if len(main.Ports) != 2 {
-		t.Fatalf("expected 2 ports, got %d", len(main.Ports))
+	if len(main.Ports) != 3 {
+		t.Fatalf("expected 3 ports, got %d", len(main.Ports))
 	}
 	assertContainerPort(t, main.Ports, "gateway", GatewayPort)
 	assertContainerPort(t, main.Ports, "canvas", CanvasPort)
@@ -1453,8 +1453,8 @@ func TestBuildService_Default(t *testing.T) {
 	}
 
 	// Ports - should have gateway, canvas, and metrics (metrics enabled by default)
-	if len(svc.Spec.Ports) != 3 {
-		t.Fatalf("expected 3 ports, got %d", len(svc.Spec.Ports))
+	if len(svc.Spec.Ports) != 4 {
+		t.Fatalf("expected 4 ports, got %d", len(svc.Spec.Ports))
 	}
 
 	assertServicePortWithTarget(t, svc.Spec.Ports, "gateway", int32(GatewayPort), int32(GatewayProxyPort))
@@ -1468,8 +1468,8 @@ func TestBuildService_WithChromium(t *testing.T) {
 
 	svc := BuildService(instance)
 
-	if len(svc.Spec.Ports) != 4 {
-		t.Fatalf("expected 4 ports with chromium, got %d", len(svc.Spec.Ports))
+	if len(svc.Spec.Ports) != 5 {
+		t.Fatalf("expected 5 ports with chromium, got %d", len(svc.Spec.Ports))
 	}
 
 	assertServicePortWithTarget(t, svc.Spec.Ports, "gateway", int32(GatewayPort), int32(GatewayProxyPort))
@@ -1803,8 +1803,8 @@ func TestBuildNetworkPolicy_Default(t *testing.T) {
 
 	// Ingress ports - gateway proxy and canvas proxy. Metrics live in their own
 	// rule so they can be restricted independently of application traffic (#578).
-	if len(firstIngress.Ports) != 2 {
-		t.Fatalf("expected 2 ingress ports, got %d", len(firstIngress.Ports))
+	if len(firstIngress.Ports) != 3 {
+		t.Fatalf("expected 3 ingress ports, got %d", len(firstIngress.Ports))
 	}
 	assertNPPort(t, firstIngress.Ports, GatewayProxyPort)
 	assertNPPort(t, firstIngress.Ports, CanvasProxyPort)
@@ -1866,8 +1866,8 @@ func TestBuildNetworkPolicy_SameNamespaceIngressDisabled(t *testing.T) {
 	if got := peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"]; got != "ingress-system" {
 		t.Errorf("ingress namespace selector = %q, want ingress-system", got)
 	}
-	if len(np.Spec.Ingress[0].Ports) != 2 {
-		t.Fatalf("explicit ingress rule has %d ports, want 2", len(np.Spec.Ingress[0].Ports))
+	if len(np.Spec.Ingress[0].Ports) != 3 {
+		t.Fatalf("explicit ingress rule has %d ports, want 3", len(np.Spec.Ingress[0].Ports))
 	}
 	assertNPPort(t, np.Spec.Ingress[0].Ports, GatewayProxyPort)
 	assertNPPort(t, np.Spec.Ingress[0].Ports, CanvasProxyPort)
@@ -11095,8 +11095,8 @@ func TestBuildService_MetricsPortDisabled(t *testing.T) {
 			t.Error("service should not include metrics port when metrics is disabled")
 		}
 	}
-	if len(svc.Spec.Ports) != 2 {
-		t.Errorf("expected 2 ports (gateway, canvas) when metrics disabled, got %d", len(svc.Spec.Ports))
+	if len(svc.Spec.Ports) != 3 {
+		t.Errorf("expected 3 ports (gateway, canvas, mcp-apps) when metrics disabled, got %d", len(svc.Spec.Ports))
 	}
 }
 
@@ -11149,8 +11149,8 @@ func TestBuildStatefulSet_MetricsPortDisabled(t *testing.T) {
 	}
 
 	main := sts.Spec.Template.Spec.Containers[0]
-	if len(main.Ports) != 2 {
-		t.Errorf("expected 2 ports (gateway, canvas) when metrics disabled, got %d", len(main.Ports))
+	if len(main.Ports) != 3 {
+		t.Errorf("expected 3 ports (gateway, canvas, mcp-apps) when metrics disabled, got %d", len(main.Ports))
 	}
 }
 
@@ -11533,8 +11533,8 @@ func TestBuildService_WithWebTerminal(t *testing.T) {
 
 	svc := BuildService(instance)
 
-	if len(svc.Spec.Ports) != 4 {
-		t.Fatalf("expected 4 ports with web terminal (gateway, canvas, web-terminal, metrics), got %d", len(svc.Spec.Ports))
+	if len(svc.Spec.Ports) != 5 {
+		t.Fatalf("expected 5 ports with web terminal (gateway, canvas, mcp-apps, web-terminal, metrics), got %d", len(svc.Spec.Ports))
 	}
 
 	// gateway and canvas use proxy targetPorts; web-terminal and metrics are direct
@@ -11575,8 +11575,8 @@ func TestBuildNetworkPolicy_WebTerminalIngressPort(t *testing.T) {
 	}
 
 	ports := np.Spec.Ingress[0].Ports
-	if len(ports) != 3 {
-		t.Fatalf("expected 3 ingress ports with web terminal, got %d", len(ports))
+	if len(ports) != 4 {
+		t.Fatalf("expected 4 ingress ports with web terminal, got %d", len(ports))
 	}
 
 	// Verify web-terminal port is present
@@ -11604,8 +11604,8 @@ func TestBuildNetworkPolicy_ChromiumIngressAndEgress(t *testing.T) {
 	}
 
 	ports := np.Spec.Ingress[0].Ports
-	if len(ports) != 3 {
-		t.Fatalf("expected 3 ingress ports with chromium (gateway, canvas, chromium), got %d", len(ports))
+	if len(ports) != 4 {
+		t.Fatalf("expected 4 ingress ports with chromium (gateway, canvas, mcp-apps, chromium), got %d", len(ports))
 	}
 
 	foundChromiumIngress := false
@@ -11690,8 +11690,8 @@ func TestBuildStatefulSet_HasGatewayProxyContainer(t *testing.T) {
 	}
 
 	// Ports
-	if len(proxy.Ports) != 2 {
-		t.Fatalf("expected 2 proxy ports, got %d", len(proxy.Ports))
+	if len(proxy.Ports) != 3 {
+		t.Fatalf("expected 3 proxy ports, got %d", len(proxy.Ports))
 	}
 	assertContainerPort(t, proxy.Ports, "gw-proxy", GatewayProxyPort)
 	assertContainerPort(t, proxy.Ports, "canvas-proxy", CanvasProxyPort)

@@ -85,9 +85,11 @@ func buildServicePorts(instance *openclawv1alpha1.OpenClawInstance) []corev1.Ser
 	// When disabled, target the gateway and canvas ports directly.
 	gwTarget := int32(GatewayProxyPort)
 	canvasTarget := int32(CanvasProxyPort)
+	mcpAppsTarget := int32(McpAppsSandboxProxyPort)
 	if !IsGatewayProxyEnabled(instance) {
 		gwTarget = int32(GatewayPort)
 		canvasTarget = int32(CanvasPort)
+		mcpAppsTarget = int32(McpAppsSandboxPort)
 	}
 
 	ports := []corev1.ServicePort{
@@ -101,6 +103,14 @@ func buildServicePorts(instance *openclawv1alpha1.OpenClawInstance) []corev1.Ser
 			Name:       "canvas",
 			Port:       int32(CanvasPort),
 			TargetPort: intstr.FromInt32(canvasTarget),
+			Protocol:   corev1.ProtocolTCP,
+		},
+		// MCP Apps sandbox listener (#615). Only reachable when
+		// mcp.apps.enabled is set in the OpenClaw config.
+		{
+			Name:       "mcp-apps",
+			Port:       int32(McpAppsSandboxPort),
+			TargetPort: intstr.FromInt32(mcpAppsTarget),
 			Protocol:   corev1.ProtocolTCP,
 		},
 	}
