@@ -130,7 +130,7 @@ Every request is validated against the instance's allowlist policy. Protected co
 |  |                     Tailscale (opt) + custom sidecars      | |
 |  +------------------------------------------------------------+ |
 |                                                                 |
-|  Service (default: 18789, 18793 or custom) -> Ingress (opt)     |
+|  Service (default: 18789, 18793, 18795 or custom) -> Ingress    |
 +-----------------------------------------------------------------+
 ```
 
@@ -1070,7 +1070,7 @@ The operator builds a single `PathPrefix: /` rule routing to the instance Servic
 
 ### Custom service ports
 
-By default the operator creates a Service with the gateway (18789) and canvas (18793) ports. To expose custom ports instead (e.g., for a non-default application), set `spec.networking.service.ports`:
+By default the operator creates a Service with the gateway (18789), canvas (18793) and MCP Apps sandbox (18795) ports. To expose custom ports instead (e.g., for a non-default application), set `spec.networking.service.ports`:
 
 ```yaml
 spec:
@@ -1084,6 +1084,26 @@ spec:
 ```
 
 When `ports` is set, it fully replaces the default ports -- including the Chromium port if the sidecar is enabled. To keep the defaults alongside custom ports, include them explicitly. If `targetPort` is omitted it defaults to `port`. See the [API reference](docs/api-reference.md#specnetworkingservice) for all fields.
+
+### MCP Apps sandbox
+
+OpenClaw's [MCP Apps](https://docs.openclaw.ai/cli/mcp/apps) and script-enabled dashboard widgets are served from a separate sandbox listener. Upstream defaults that listener to the gateway port plus one (18790) on loopback, which inside an operator-managed pod is the port the gateway proxy sidecar already listens on. The operator therefore handles the sandbox like the gateway and canvas ports:
+
+- When `mcp.apps.enabled` is `true` in your OpenClaw config and `mcp.apps.sandboxPort` is not set, the operator sets `mcp.apps.sandboxPort` to `18795`.
+- The gateway proxy sidecar forwards pod port `18796` to the loopback listener on `18795`.
+- The Service exposes port `18795` (named `mcp-apps`), and the NetworkPolicy allows ingress to it under the same rules as the gateway and canvas ports.
+
+```yaml
+spec:
+  config:
+    raw:
+      mcp:
+        apps:
+          enabled: true
+          sandboxOrigin: "https://apps.openclaw.example.com"
+```
+
+OpenClaw requires the sandbox origin to differ from the Control UI origin, so give it a dedicated hostname and route only that hostname to Service port `18795` with your own Ingress or HTTPRoute. If you set `mcp.apps.sandboxPort` yourself, your value wins; use `18795` unless you also expose your port with a custom sidecar, because the proxy only forwards to `18795`. With `spec.networking.service.ports` set, add the `mcp-apps` port (target port `18796`) to your list explicitly.
 
 ### CA bundle injection
 
