@@ -48,13 +48,15 @@ func dumpPodDiagnostics(namespace, podName string) {
 		return
 	}
 	GinkgoWriter.Printf("phase=%s reason=%q message=%q\n", pod.Status.Phase, pod.Status.Reason, pod.Status.Message)
-	for _, c := range pod.Status.Conditions {
+	for i := range pod.Status.Conditions {
+		c := &pod.Status.Conditions[i]
 		GinkgoWriter.Printf("condition %s=%s reason=%q message=%q\n", c.Type, c.Status, c.Reason, c.Message)
 	}
 
 	var notReady []string
 	report := func(kind string, statuses []corev1.ContainerStatus) {
-		for _, cs := range statuses {
+		for i := range statuses {
+			cs := &statuses[i]
 			GinkgoWriter.Printf("%s %s: ready=%t restarts=%d", kind, cs.Name, cs.Ready, cs.RestartCount)
 			switch {
 			case cs.State.Waiting != nil:
