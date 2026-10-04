@@ -1234,7 +1234,7 @@ The operator follows a **secure-by-default** philosophy. Every instance ships wi
 ### Defaults
 
 - **Non-root execution**: containers run as UID 1000; root (UID 0) is blocked by the validating webhook (exception: Ollama sidecar requires root per the official image)
-- **Read-only root filesystem**: enabled by default for the main container and the Chromium sidecar; the PVC at `~/.openclaw/` provides writable home, and a `/tmp` emptyDir handles temp files
+- **Read-only root filesystem**: enabled by default for the main container and the Chromium sidecar; the PVC at `~/.openclaw/` provides writable home, and a `/tmp` emptyDir handles temp files. The `init-tmp-dir` init container gives that `/tmp` the sticky bit (mode `1777`), which OpenClaw 2026.9.6 and later require before they create temporary workspaces; the root of an emptyDir is `2777` under `fsGroup` and cannot be changed from the pod spec
 - **All capabilities dropped**: no ambient Linux capabilities
 - **Seccomp RuntimeDefault**: syscall filtering enabled
 - **Default-deny NetworkPolicy**: DNS (53) and HTTPS (443) egress allowed by default; set `security.networkPolicy.allowHTTPS: false` and use `additionalEgress` to restrict HTTPS destinations (see [Network Isolation](docs/architecture.md#network-isolation)). Ingress is limited to the same namespace. Metrics ingress is a separate rule that can be restricted independently -- see [Restricting who can scrape metrics](#restricting-who-can-scrape-metrics)
