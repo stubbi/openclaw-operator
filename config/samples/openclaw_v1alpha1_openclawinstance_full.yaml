@@ -103,6 +103,7 @@ spec:
 
   # Storage configuration
   storage:
+    fixOwnership: true  # default; chown the data volume root to runAsUser:runAsGroup (init-data-owner)
     persistence:
       enabled: true
       storageClass: premium-rwo

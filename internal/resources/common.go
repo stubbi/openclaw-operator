@@ -386,6 +386,12 @@ func IsPersistenceEnabled(instance *openclawv1alpha1.OpenClawInstance) bool {
 	return instance.Spec.Storage.Persistence.Enabled == nil || *instance.Spec.Storage.Persistence.Enabled
 }
 
+// IsDataOwnershipFixEnabled returns whether the init-data-owner init container
+// runs. Defaults to true; see StorageSpec.FixOwnership.
+func IsDataOwnershipFixEnabled(instance *openclawv1alpha1.OpenClawInstance) bool {
+	return instance.Spec.Storage.FixOwnership == nil || *instance.Spec.Storage.FixOwnership
+}
+
 // ChromiumPVCName returns the name of the Chromium browser profile PVC
 func ChromiumPVCName(instance *openclawv1alpha1.OpenClawInstance) string {
 	return instance.Name + "-chromium-data"

@@ -702,6 +702,7 @@ func validateForcePaths(instance *openclawv1alpha1.OpenClawInstance) error {
 
 // reservedInitContainerNames are names used by operator-managed init containers.
 var reservedInitContainerNames = map[string]bool{
+	"init-data-owner":          true,
 	"init-config":              true,
 	"init-pnpm":                true,
 	"init-python":              true,

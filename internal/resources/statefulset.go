@@ -537,6 +537,12 @@ func hasUserEnv(instance *openclawv1alpha1.OpenClawInstance, name string) bool {
 func buildInitContainers(instance *openclawv1alpha1.OpenClawInstance, externalWorkspaceFiles map[string]string, additionalExternalFiles map[string]map[string]string, skillPacks *ResolvedSkillPacks) []corev1.Container {
 	var initContainers []corev1.Container
 
+	// Data volume ownership fix. Runs first so every later init container and
+	// the main container see a data root owned by the pod UID. See #607.
+	if IsDataOwnershipFixEnabled(instance) {
+		initContainers = append(initContainers, buildDataOwnerInitContainer(instance))
+	}
+
 	// Config/workspace init container (only if there's something to do)
 	if script := BuildInitScript(instance, externalWorkspaceFiles, additionalExternalFiles, skillPacks); script != "" {
 		mounts := []corev1.VolumeMount{
@@ -1510,6 +1516,77 @@ pnpm --version`
 			},
 		},
 		VolumeMounts: mounts,
+	}
+}
+
+// DataOwnerInitContainerName is the name of the init container that fixes
+// ownership of the data volume root.
+const DataOwnerInitContainerName = "init-data-owner"
+
+// buildDataOwnerInitContainer creates an init container that chowns the root
+// of the data volume to the pod's runAsUser:runAsGroup when it is owned by
+// someone else.
+//
+// Kubernetes applies fsGroup to the volume root (group + setgid bit) but never
+// changes its owner, so on block-storage PVCs (EBS, PD, Ceph RBD, ...) the
+// directory mounted at ~/.openclaw is root:<fsGroup>. That was harmless for
+// OpenClaw <= 2026.8. Starting with 2026.9 the gateway and `openclaw doctor`
+// tighten directory modes when they write openclaw.json, and chmod on a
+// directory you do not own fails with EPERM even when you are in its group.
+// The result is a crash loop plus a `doctor --fix` that cannot complete
+// (#607). hostPath-backed volumes without fsGroup support (#448) hit the same
+// class of problem for every init container.
+//
+// The container runs as root with all capabilities dropped except CHOWN,
+// touches only the volume root (children are already created by the pod
+// UID), and exits without changes when ownership is already correct. It can
+// be disabled with spec.storage.fixOwnership=false.
+func buildDataOwnerInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev1.Container {
+	psc := buildPodSecurityContext(instance)
+	uid := int64(1000)
+	gid := int64(1000)
+	if psc.RunAsUser != nil {
+		uid = *psc.RunAsUser
+	}
+	if psc.RunAsGroup != nil {
+		gid = *psc.RunAsGroup
+	}
+
+	script := fmt.Sprintf(`set -e
+want="%d:%d"
+have="$(stat -c '%%u:%%g' /data)"
+if [ "$have" = "$want" ]; then
+  echo "data volume root already owned by $want"
+  exit 0
+fi
+chown "$want" /data
+echo "data volume root ownership changed: $have -> $want"`, uid, gid)
+
+	return corev1.Container{
+		Name:                     DataOwnerInitContainerName,
+		Image:                    ApplyRegistryOverride("docker.io/library/busybox:1.37", instance.Spec.Registry),
+		Command:                  []string{"sh", "-c", script},
+		ImagePullPolicy:          corev1.PullIfNotPresent,
+		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
+		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+		Resources:                corev1.ResourceRequirements{},
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: Ptr(false),
+			ReadOnlyRootFilesystem:   Ptr(true),
+			RunAsNonRoot:             Ptr(false), // chown of a root-owned directory requires root + CAP_CHOWN
+			RunAsUser:                Ptr(int64(0)),
+			RunAsGroup:               Ptr(int64(0)),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+				Add:  []corev1.Capability{"CHOWN"},
+			},
+			SeccompProfile: &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "data", MountPath: "/data"},
+		},
 	}
 }
 
