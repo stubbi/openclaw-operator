@@ -761,6 +761,15 @@ var _ = Describe("Chromium Full Integration Tests", Ordered, func() {
 		}, 120*time.Second, 3*time.Second).ShouldNot(BeEmpty())
 
 		By("Waiting for all containers to be ready")
+		// A failed assertion unwinds through this deferred call, so the pod's
+		// status, events and logs are captured before AfterAll deletes the
+		// namespace. Without it a timeout here only says "not ready".
+		allReady := false
+		defer func() {
+			if !allReady {
+				dumpPodDiagnostics(namespace, podName)
+			}
+		}()
 		Eventually(func() bool {
 			pod := &corev1.Pod{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
@@ -790,6 +799,7 @@ var _ = Describe("Chromium Full Integration Tests", Ordered, func() {
 			}
 			return true
 		}, 10*time.Minute, 5*time.Second).Should(BeTrue())
+		allReady = true
 
 		By("Finding a free local port for port-forward")
 		listener, err := net.Listen("tcp", ":0")
