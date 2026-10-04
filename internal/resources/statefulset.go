@@ -538,7 +538,7 @@ func buildInitContainers(instance *openclawv1alpha1.OpenClawInstance, externalWo
 	var initContainers []corev1.Container
 
 	// Data volume ownership fix. Runs first so every later init container and
-	// the main container see a data root owned by the pod UID. See #607.
+	// the main container see a data root owned by the gateway UID. See #607.
 	if IsDataOwnershipFixEnabled(instance) {
 		initContainers = append(initContainers, buildDataOwnerInitContainer(instance))
 	}
@@ -644,6 +644,31 @@ func buildInitContainers(instance *openclawv1alpha1.OpenClawInstance, externalWo
 	// Plugins init container (only if plugins are defined)
 	if pluginsContainer := buildPluginsInitContainer(instance); pluginsContainer != nil {
 		initContainers = append(initContainers, *pluginsContainer)
+	}
+
+	// Data writers must share the gateway UID: after OpenClaw tightens the
+	// data directory to 0700, the pod UID may no longer be able to traverse it.
+	// Only propagate identity, preserving each helper's own privilege settings.
+	// Explicit helper identities (notably init-data-owner's root UID) and
+	// user-supplied init containers must keep their existing security contexts.
+	mainSC := buildContainerSecurityContext(instance)
+	if mainSC.RunAsUser != nil {
+		for i := range initContainers {
+			c := &initContainers[i]
+			if c.SecurityContext != nil && c.SecurityContext.RunAsUser != nil {
+				continue
+			}
+			for _, mount := range c.VolumeMounts {
+				if mount.Name == "data" && !mount.ReadOnly {
+					if c.SecurityContext == nil {
+						c.SecurityContext = &corev1.SecurityContext{}
+					}
+					c.SecurityContext.RunAsUser = mainSC.RunAsUser
+					c.SecurityContext.RunAsNonRoot = mainSC.RunAsNonRoot
+					break
+				}
+			}
+		}
 	}
 
 	// Ollama model-pulling init container (only if enabled and models are specified)
@@ -1524,7 +1549,7 @@ pnpm --version`
 const DataOwnerInitContainerName = "init-data-owner"
 
 // buildDataOwnerInitContainer creates an init container that chowns the root
-// of the data volume to the pod's runAsUser:runAsGroup when it is owned by
+// of the data volume to the gateway's effective UID and pod GID when it is owned by
 // someone else.
 //
 // Kubernetes applies fsGroup to the volume root (group + setgid bit) but never
@@ -1538,8 +1563,8 @@ const DataOwnerInitContainerName = "init-data-owner"
 // class of problem for every init container.
 //
 // The container runs as root with all capabilities dropped except CHOWN,
-// touches only the volume root (children are already created by the pod
-// UID), and exits without changes when ownership is already correct. It can
+// touches only the volume root (existing children are never migrated), and
+// exits without changes when ownership is already correct. It can
 // be disabled with spec.storage.fixOwnership=false.
 func buildDataOwnerInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev1.Container {
 	psc := buildPodSecurityContext(instance)
@@ -1550,6 +1575,9 @@ func buildDataOwnerInitContainer(instance *openclawv1alpha1.OpenClawInstance) co
 	}
 	if psc.RunAsGroup != nil {
 		gid = *psc.RunAsGroup
+	}
+	if sc := buildContainerSecurityContext(instance); sc.RunAsUser != nil {
+		uid = *sc.RunAsUser
 	}
 
 	script := fmt.Sprintf(`set -e

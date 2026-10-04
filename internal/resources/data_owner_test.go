@@ -17,6 +17,7 @@ limitations under the License.
 package resources
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -25,11 +26,77 @@ import (
 	openclawv1alpha1 "github.com/paperclipinc/openclaw-operator/api/v1alpha1"
 )
 
+func TestDataOwnerEffectiveUID(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		podUID, containerUID *int64
+		wantUID              int64
+	}{
+		{"default", nil, nil, 1000},
+		{"pod fallback", Ptr(int64(1500)), nil, 1500},
+		{"container override", Ptr(int64(1500)), Ptr(int64(2000)), 2000},
+		{"container override with default pod", nil, Ptr(int64(2000)), 2000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := newTestInstance("effective-owner")
+			instance.Spec.Security.PodSecurityContext = &openclawv1alpha1.PodSecurityContextSpec{RunAsUser: tc.podUID, RunAsGroup: Ptr(int64(3000))}
+			instance.Spec.Security.ContainerSecurityContext = &openclawv1alpha1.ContainerSecurityContextSpec{RunAsUser: tc.containerUID}
+			sts := BuildStatefulSet(instance, "", nil, nil, nil)
+			owner := findDataOwnerInitContainer(t, sts.Spec.Template.Spec.InitContainers)
+			if owner == nil {
+				t.Fatal("missing ownership helper")
+			}
+			if want := fmt.Sprintf(`want="%d:3000"`, tc.wantUID); !strings.Contains(owner.Command[2], want) {
+				t.Errorf("ownership script must target %s: %s", want, owner.Command[2])
+			}
+		})
+	}
+}
+
+func TestDataWriterInitContainersUseMainUID(t *testing.T) {
+	for _, fixOwnership := range []bool{true, false} {
+		t.Run(fmt.Sprintf("fixOwnership=%t", fixOwnership), func(t *testing.T) {
+			instance := newTestInstance("data-writer-uid")
+			instance.Spec.Storage.FixOwnership = Ptr(fixOwnership)
+			instance.Spec.Security.ContainerSecurityContext = &openclawv1alpha1.ContainerSecurityContextSpec{RunAsUser: Ptr(int64(2000))}
+			instance.Spec.Plugins = []string{"npm:example@1.0.0"}
+			instance.Spec.Skills = []string{"example"}
+			instance.Spec.RuntimeDeps.Pnpm = true
+			instance.Spec.RuntimeDeps.Python = true
+			instance.Spec.InitContainers = []corev1.Container{{Name: "custom", Image: "example", VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}}}}
+			sts := BuildStatefulSet(instance, "", nil, nil, nil)
+			seen := map[string]bool{}
+			for _, c := range sts.Spec.Template.Spec.InitContainers {
+				switch c.Name {
+				case DataOwnerInitContainerName:
+					if c.SecurityContext.RunAsUser == nil || *c.SecurityContext.RunAsUser != 0 {
+						t.Error("ownership helper must remain root")
+					}
+				case "custom":
+					if c.SecurityContext != nil {
+						t.Error("custom init container must retain its security context")
+					}
+				default:
+					seen[c.Name] = true
+					if c.SecurityContext == nil || c.SecurityContext.RunAsUser == nil || *c.SecurityContext.RunAsUser != 2000 {
+						t.Errorf("%s must use gateway UID 2000 to access its private data directory", c.Name)
+					}
+				}
+			}
+			for _, name := range []string{"init-config", "init-uv", "init-pip", "init-plugin-runtime-deps", "init-pnpm", "init-python", "init-skills", "init-plugins"} {
+				if !seen[name] {
+					t.Errorf("missing test coverage for %s", name)
+				}
+			}
+		})
+	}
+}
+
 // Regression tests for #607: the data volume root is owned by root on
 // fsGroup-only PVCs, and OpenClaw >= 2026.9 fails with
 // "EPERM: operation not permitted, fchmod" when it tightens directory modes
 // on ~/.openclaw. The init-data-owner init container chowns the volume root
-// to the pod UID before anything else runs.
+// to the effective gateway UID before anything else runs.
 
 func findDataOwnerInitContainer(t *testing.T, containers []corev1.Container) *corev1.Container {
 	t.Helper()
