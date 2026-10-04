@@ -337,9 +337,12 @@ func buildMainContainer(instance *openclawv1alpha1.OpenClawInstance, gatewayToke
 				MountPath: "/home/openclaw/.config",
 				SubPath:   ".config",
 			},
+			// Mounted through a subdirectory that init-tmp-dir creates with the
+			// sticky bit. See buildTmpDirInitContainer.
 			{
 				Name:      "tmp",
 				MountPath: "/tmp",
+				SubPath:   MainTmpSubPath,
 			},
 		},
 	}
@@ -645,6 +648,10 @@ func buildInitContainers(instance *openclawv1alpha1.OpenClawInstance, externalWo
 	if pluginsContainer := buildPluginsInitContainer(instance); pluginsContainer != nil {
 		initContainers = append(initContainers, *pluginsContainer)
 	}
+
+	// Sticky /tmp for the main container. Always present: the main container
+	// mounts the subdirectory this creates.
+	initContainers = append(initContainers, buildTmpDirInitContainer(instance))
 
 	// Ollama model-pulling init container (only if enabled and models are specified)
 	if instance.Spec.Ollama.Enabled && len(instance.Spec.Ollama.Models) > 0 {
@@ -1516,6 +1523,66 @@ pnpm --version`
 			},
 		},
 		VolumeMounts: mounts,
+	}
+}
+
+// TmpDirInitContainerName is the name of the init container that prepares the
+// main container's /tmp.
+const TmpDirInitContainerName = "init-tmp-dir"
+
+// MainTmpSubPath is the subdirectory of the "tmp" emptyDir that the main
+// container mounts at /tmp.
+const MainTmpSubPath = "tmp"
+
+// buildTmpDirInitContainer creates the init container that prepares a /tmp
+// with the sticky bit for the main container.
+//
+// The main container has a read-only root filesystem, so /tmp is an emptyDir.
+// With fsGroup set, the kubelet makes the root of an emptyDir group-owned by
+// fsGroup with mode 2777: world-writable, setgid, no sticky bit. OpenClaw
+// 2026.9.6 and later refuse to create a temporary workspace below such a
+// directory ("temp workspace ancestor is group/world writable without sticky
+// protection"). The startup doctor needs that workspace whenever it has to
+// install a configured plugin, so the gateway exits and the pod crash-loops.
+// #616 fixed the same check for init-plugins, which can use the image's own
+// /tmp because its root filesystem is writable.
+//
+// Nothing in the pod spec can set the mode of a volume root, and the pod UID
+// does not own it, so it cannot chmod it either. A directory the pod UID
+// creates inside the volume is its own, though. This container creates one
+// with mode 1777 and the main container mounts it via subPath, which hides the
+// 2777 volume root from the main container's path ancestry.
+//
+// It runs as the pod UID with no capabilities, so it is admitted under the
+// "restricted" Pod Security Standard.
+func buildTmpDirInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev1.Container {
+	// chmod after mkdir: the setgid volume root and the umask both influence
+	// the mode mkdir produces, and a restart of the pod sandbox finds the
+	// directory already present.
+	script := fmt.Sprintf("set -e\nmkdir -p /tmp-volume/%[1]s\nchmod 1777 /tmp-volume/%[1]s", MainTmpSubPath)
+
+	return corev1.Container{
+		Name:                     TmpDirInitContainerName,
+		Image:                    ApplyRegistryOverride("docker.io/library/busybox:1.37", instance.Spec.Registry),
+		Command:                  []string{"sh", "-c", script},
+		ImagePullPolicy:          corev1.PullIfNotPresent,
+		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
+		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+		Resources:                corev1.ResourceRequirements{},
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: Ptr(false),
+			ReadOnlyRootFilesystem:   Ptr(true),
+			RunAsNonRoot:             Ptr(true),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+			SeccompProfile: &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "tmp", MountPath: "/tmp-volume"},
+		},
 	}
 }
 
