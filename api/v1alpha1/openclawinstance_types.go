@@ -713,6 +713,21 @@ type StorageSpec struct {
 	// Persistence configures the PersistentVolumeClaim
 	// +optional
 	Persistence PersistenceSpec `json:"persistence,omitempty"`
+
+	// FixOwnership runs the operator-managed init-data-owner init container,
+	// which chowns the root of the data volume to the pod's runAsUser:runAsGroup
+	// when it is owned by someone else (typically root). Kubernetes only applies
+	// fsGroup to a volume root, so on most PVCs the directory mounted at
+	// ~/.openclaw stays owned by root. OpenClaw >= 2026.9 tightens directory
+	// modes on that path when it writes config and fails with
+	// "EPERM: operation not permitted, fchmod" if the directory is not owned by
+	// the pod UID. The init container runs as root with only CAP_CHOWN and
+	// exits immediately when ownership is already correct. Set to false on
+	// clusters that forbid root init containers (e.g. the "restricted" Pod
+	// Security Standard) and fix ownership out of band instead.
+	// +kubebuilder:default=true
+	// +optional
+	FixOwnership *bool `json:"fixOwnership,omitempty"`
 }
 
 // PersistenceSpec defines PVC configuration

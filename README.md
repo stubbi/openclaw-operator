@@ -927,6 +927,20 @@ spec:
 
 > **Retention is stateful data protection.** Because agent workspaces contain irreplaceable data such as memory, notebooks, and conversation history, the default is `orphan: true`. To re-attach a retained PVC to a new instance, set `existingClaim` to its name.
 
+#### Data volume ownership
+
+Kubernetes applies `fsGroup` to the root of a volume but never changes its owner, so on most PVCs the directory mounted at `~/.openclaw` is owned by `root` with only the group set to the pod's GID. OpenClaw 2026.9 and later tighten directory modes on that path when they write `openclaw.json`, and `chmod` on a directory you do not own fails with `EPERM: operation not permitted, fchmod` even when you are in its group. Without a fix the gateway crash-loops after the upgrade and `openclaw doctor --fix` cannot complete.
+
+The operator therefore runs an `init-data-owner` init container first on every pod start. It runs as root with every capability dropped except `CHOWN`, changes the owner of the volume root to the pod's `runAsUser:runAsGroup` when it differs, and exits without touching anything when ownership is already correct. Children of the volume root are created by the pod UID and are never modified.
+
+If your cluster forbids root init containers (for example the `restricted` Pod Security Standard), disable it and fix ownership out of band once per PVC:
+
+```yaml
+spec:
+  storage:
+    fixOwnership: false
+```
+
 ### Cluster-wide defaults (air-gapped / restricted networks)
 
 For deployments where every instance needs the same registry mirror or the same package-mirror env vars (China regions, air-gapped clusters, private registries), set defaults once on a singleton `OpenClawClusterDefaults` resource and the operator will merge them into every `OpenClawInstance` at reconcile time:

@@ -879,10 +879,10 @@ func TestBuildStatefulSet_ConfigVolume_RawConfig(t *testing.T) {
 
 	// Init container should copy config from ConfigMap to data volume
 	initContainers := sts.Spec.Template.Spec.InitContainers
-	if len(initContainers) != 4 {
-		t.Fatalf("expected 4 init containers (init-config + init-uv + init-pip + init-plugin-runtime-deps), got %d", len(initContainers))
+	if len(initContainers) != 5 {
+		t.Fatalf("expected 5 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps), got %d", len(initContainers))
 	}
-	initC := initContainers[0]
+	initC := initContainers[1]
 	if initC.Name != "init-config" {
 		t.Errorf("init container name = %q, want %q", initC.Name, "init-config")
 	}
@@ -924,10 +924,10 @@ func TestBuildStatefulSet_ConfigVolume_ConfigMapRef(t *testing.T) {
 	// The controller reads the external CM and writes enriched content into the
 	// operator-managed CM under "openclaw.json", so the init container always uses that key.
 	initContainers := sts.Spec.Template.Spec.InitContainers
-	if len(initContainers) != 4 {
-		t.Fatalf("expected 4 init containers (init-config + init-uv + init-pip + init-plugin-runtime-deps), got %d", len(initContainers))
+	if len(initContainers) != 5 {
+		t.Fatalf("expected 5 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps), got %d", len(initContainers))
 	}
-	initC := initContainers[0]
+	initC := initContainers[1]
 	assertVolumeMount(t, initC.VolumeMounts, "data", "/data")
 	assertVolumeMount(t, initC.VolumeMounts, "config", "/config")
 
@@ -959,12 +959,12 @@ func TestBuildStatefulSet_ConfigMapRef_DefaultKey(t *testing.T) {
 
 	// Init container should use "openclaw.json" (operator-managed key)
 	initContainers := sts.Spec.Template.Spec.InitContainers
-	if len(initContainers) != 4 {
-		t.Fatalf("expected 4 init containers (init-config + init-uv + init-pip + init-plugin-runtime-deps), got %d", len(initContainers))
+	if len(initContainers) != 5 {
+		t.Fatalf("expected 5 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps), got %d", len(initContainers))
 	}
 	expectedPrefix := "cp /config/'openclaw.json' /data/openclaw.json"
-	if !strings.HasPrefix(initContainers[0].Command[2], expectedPrefix) {
-		t.Errorf("init container command should start with %q, got %q", expectedPrefix, initContainers[0].Command[2])
+	if !strings.HasPrefix(initContainers[1].Command[2], expectedPrefix) {
+		t.Errorf("init container command should start with %q, got %q", expectedPrefix, initContainers[1].Command[2])
 	}
 
 	// Volume should reference the operator-managed ConfigMap
@@ -983,12 +983,12 @@ func TestBuildStatefulSet_VanillaDeployment_HasInitContainer(t *testing.T) {
 
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 
-	// Vanilla deployments get init-config + init-uv + init-pip + init-plugin-runtime-deps
-	if len(sts.Spec.Template.Spec.InitContainers) != 4 {
-		t.Fatalf("expected 4 init containers for vanilla deployment, got %d", len(sts.Spec.Template.Spec.InitContainers))
+	// Vanilla deployments get init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps
+	if len(sts.Spec.Template.Spec.InitContainers) != 5 {
+		t.Fatalf("expected 5 init containers for vanilla deployment, got %d", len(sts.Spec.Template.Spec.InitContainers))
 	}
-	if sts.Spec.Template.Spec.InitContainers[0].Name != "init-config" {
-		t.Errorf("init container name = %q, want %q", sts.Spec.Template.Spec.InitContainers[0].Name, "init-config")
+	if sts.Spec.Template.Spec.InitContainers[1].Name != "init-config" {
+		t.Errorf("init container name = %q, want %q", sts.Spec.Template.Spec.InitContainers[1].Name, "init-config")
 	}
 
 	// Verify config volume is present
@@ -4716,7 +4716,7 @@ func TestBuildStatefulSet_InitContainerDefaults(t *testing.T) {
 		t.Fatal("expected init container when raw config is set")
 	}
 
-	init := sts.Spec.Template.Spec.InitContainers[0]
+	init := sts.Spec.Template.Spec.InitContainers[1]
 	if init.TerminationMessagePath != corev1.TerminationMessagePathDefault {
 		t.Errorf("init container TerminationMessagePath = %q, want %q", init.TerminationMessagePath, corev1.TerminationMessagePathDefault)
 	}
@@ -5601,7 +5601,7 @@ func TestBuildStatefulSet_WorkspaceVolume(t *testing.T) {
 	}
 
 	// Verify init container has workspace-init mount
-	init := sts.Spec.Template.Spec.InitContainers[0]
+	init := sts.Spec.Template.Spec.InitContainers[1]
 	assertVolumeMount(t, init.VolumeMounts, "workspace-init", "/workspace-init")
 }
 
@@ -5949,7 +5949,7 @@ func TestBuildStatefulSet_MergeMode_OpenClawImage(t *testing.T) {
 		t.Fatal("expected init container for merge mode")
 	}
 
-	initC := initContainers[0]
+	initC := initContainers[1]
 	wantImage := GetImage(instance)
 	if initC.Image != wantImage {
 		t.Errorf("merge mode init container image = %q, want %q", initC.Image, wantImage)
@@ -5994,7 +5994,7 @@ func TestBuildStatefulSet_OverwriteMode_BusyboxImage(t *testing.T) {
 		t.Fatal("expected init container for overwrite mode")
 	}
 
-	initC := initContainers[0]
+	initC := initContainers[1]
 	if initC.Image != "docker.io/library/busybox:1.37" {
 		t.Errorf("overwrite mode init container image = %q, want docker.io/library/busybox:1.37", initC.Image)
 	}
@@ -7955,26 +7955,29 @@ func TestBuildStatefulSet_CustomInitContainers_AfterOperatorManaged(t *testing.T
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	initContainers := sts.Spec.Template.Spec.InitContainers
 
-	if len(initContainers) != 6 {
-		t.Fatalf("expected 6 init containers, got %d", len(initContainers))
+	if len(initContainers) != 7 {
+		t.Fatalf("expected 7 init containers, got %d", len(initContainers))
 	}
-	if initContainers[0].Name != "init-config" {
-		t.Errorf("initContainers[0] = %q, want init-config", initContainers[0].Name)
+	if initContainers[0].Name != "init-data-owner" {
+		t.Errorf("initContainers[0] = %q, want init-data-owner", initContainers[0].Name)
 	}
-	if initContainers[1].Name != "init-uv" {
-		t.Errorf("initContainers[1] = %q, want init-uv", initContainers[1].Name)
+	if initContainers[1].Name != "init-config" {
+		t.Errorf("initContainers[1] = %q, want init-config", initContainers[1].Name)
 	}
-	if initContainers[2].Name != "init-pip" {
-		t.Errorf("initContainers[2] = %q, want init-pip", initContainers[2].Name)
+	if initContainers[2].Name != "init-uv" {
+		t.Errorf("initContainers[2] = %q, want init-uv", initContainers[2].Name)
 	}
-	if initContainers[3].Name != "init-plugin-runtime-deps" {
-		t.Errorf("initContainers[3] = %q, want init-plugin-runtime-deps", initContainers[3].Name)
+	if initContainers[3].Name != "init-pip" {
+		t.Errorf("initContainers[3] = %q, want init-pip", initContainers[3].Name)
 	}
-	if initContainers[4].Name != "init-skills" {
-		t.Errorf("initContainers[4] = %q, want init-skills", initContainers[4].Name)
+	if initContainers[4].Name != "init-plugin-runtime-deps" {
+		t.Errorf("initContainers[4] = %q, want init-plugin-runtime-deps", initContainers[4].Name)
 	}
-	if initContainers[5].Name != "user-init" {
-		t.Errorf("initContainers[5] = %q, want user-init", initContainers[5].Name)
+	if initContainers[5].Name != "init-skills" {
+		t.Errorf("initContainers[5] = %q, want init-skills", initContainers[5].Name)
+	}
+	if initContainers[6].Name != "user-init" {
+		t.Errorf("initContainers[6] = %q, want user-init", initContainers[6].Name)
 	}
 }
 
@@ -8031,7 +8034,7 @@ func TestBuildStatefulSet_JSON5_UsesOpenClawImage(t *testing.T) {
 		t.Fatal("expected init container for JSON5 mode")
 	}
 
-	initC := initContainers[0]
+	initC := initContainers[1]
 	expectedImage := GetImage(instance)
 	if initC.Image != expectedImage {
 		t.Errorf("JSON5 init container image = %q, want %q", initC.Image, expectedImage)
@@ -8054,7 +8057,7 @@ func TestBuildStatefulSet_JSON5_InitTmpVolume(t *testing.T) {
 	}
 
 	// Should have init-tmp mount on init container
-	initC := sts.Spec.Template.Spec.InitContainers[0]
+	initC := sts.Spec.Template.Spec.InitContainers[1]
 	assertVolumeMount(t, initC.VolumeMounts, "init-tmp", "/tmp")
 }
 
@@ -8066,7 +8069,7 @@ func TestBuildStatefulSet_JSON5_WritableRootFS(t *testing.T) {
 	instance.Spec.Config.Format = ConfigFormatJSON5
 
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
-	initC := sts.Spec.Template.Spec.InitContainers[0]
+	initC := sts.Spec.Template.Spec.InitContainers[1]
 
 	if initC.SecurityContext.ReadOnlyRootFilesystem == nil || *initC.SecurityContext.ReadOnlyRootFilesystem {
 		t.Error("JSON5 init container should have writable root filesystem for npx")
@@ -8345,7 +8348,7 @@ func TestBuildStatefulSet_RuntimeDeps_InitContainerOrder(t *testing.T) {
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	initContainers := sts.Spec.Template.Spec.InitContainers
 
-	expected := []string{"init-config", "init-uv", "init-pip", "init-plugin-runtime-deps", "init-pnpm", "init-python", "init-skills", "user-init"}
+	expected := []string{"init-data-owner", "init-config", "init-uv", "init-pip", "init-plugin-runtime-deps", "init-pnpm", "init-python", "init-skills", "user-init"}
 	if len(initContainers) != len(expected) {
 		t.Fatalf("expected %d init containers, got %d: %v", len(expected), len(initContainers),
 			func() []string {
@@ -12727,8 +12730,8 @@ func TestBuildStatefulSet_RunAsNonRoot_DefaultBehavior(t *testing.T) {
 			t.Errorf("init container %q: security context or runAsNonRoot is nil", ic.Name)
 			continue
 		}
-		// Ollama init runs as root intentionally
-		if ic.Name == "init-ollama" {
+		// Ollama init and the data-owner chown init run as root intentionally
+		if ic.Name == "init-ollama" || ic.Name == DataOwnerInitContainerName {
 			continue
 		}
 		if !*ic.SecurityContext.RunAsNonRoot {
@@ -12864,8 +12867,8 @@ func TestBuildStatefulSet_ContainerLevelRunAsNonRootOverride(t *testing.T) {
 		if ic.SecurityContext == nil || ic.SecurityContext.RunAsNonRoot == nil {
 			continue
 		}
-		// Skip ollama init (runs as root)
-		if ic.Name == "init-ollama" {
+		// Skip ollama init and the data-owner chown init (run as root)
+		if ic.Name == "init-ollama" || ic.Name == DataOwnerInitContainerName {
 			continue
 		}
 		if !*ic.SecurityContext.RunAsNonRoot {
