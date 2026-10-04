@@ -286,8 +286,10 @@ func buildContainers(instance *openclawv1alpha1.OpenClawInstance, gatewayTokenSe
 }
 
 // buildMainContainerPorts returns the container ports for the main container.
-// Always includes gateway and canvas. The metrics port is on the OTel
-// Collector sidecar, not the main container.
+// Always includes gateway, canvas and the MCP Apps sandbox. The sandbox
+// listener only exists when mcp.apps.enabled is set in the OpenClaw config;
+// declaring the port is informational and harmless otherwise. The metrics
+// port is on the OTel Collector sidecar, not the main container.
 func buildMainContainerPorts(instance *openclawv1alpha1.OpenClawInstance) []corev1.ContainerPort {
 	_ = instance // signature kept for consistency
 	return []corev1.ContainerPort{
@@ -299,6 +301,11 @@ func buildMainContainerPorts(instance *openclawv1alpha1.OpenClawInstance) []core
 		{
 			Name:          "canvas",
 			ContainerPort: CanvasPort,
+			Protocol:      corev1.ProtocolTCP,
+		},
+		{
+			Name:          "mcp-apps",
+			ContainerPort: McpAppsSandboxPort,
 			Protocol:      corev1.ProtocolTCP,
 		},
 	}
@@ -1952,6 +1959,11 @@ func buildGatewayProxyContainer(instance *openclawv1alpha1.OpenClawInstance) cor
 			{
 				Name:          "canvas-proxy",
 				ContainerPort: CanvasProxyPort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				Name:          "mcp-apps-proxy",
+				ContainerPort: McpAppsSandboxProxyPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},

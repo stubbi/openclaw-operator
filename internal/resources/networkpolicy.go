@@ -84,9 +84,11 @@ func networkPolicyIngressPorts(instance *openclawv1alpha1.OpenClawInstance) []ne
 	// otherwise use the direct gateway/canvas ports.
 	gwPort := int32(GatewayProxyPort)
 	canvasPort := int32(CanvasProxyPort)
+	mcpAppsPort := int32(McpAppsSandboxProxyPort)
 	if !IsGatewayProxyEnabled(instance) {
 		gwPort = int32(GatewayPort)
 		canvasPort = int32(CanvasPort)
+		mcpAppsPort = int32(McpAppsSandboxPort)
 	}
 
 	ports := []networkingv1.NetworkPolicyPort{
@@ -97,6 +99,10 @@ func networkPolicyIngressPorts(instance *openclawv1alpha1.OpenClawInstance) []ne
 		{
 			Protocol: Ptr(corev1.ProtocolTCP),
 			Port:     Ptr(intstr.FromInt32(canvasPort)),
+		},
+		{
+			Protocol: Ptr(corev1.ProtocolTCP),
+			Port:     Ptr(intstr.FromInt32(mcpAppsPort)),
 		},
 	}
 
