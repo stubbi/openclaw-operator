@@ -43,6 +43,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 ### Prerequisites
 
 - Go 1.22+
+- Node.js 22+ (verified plugin installer tests)
 - Docker
 - kubectl
 - Kind (for local testing)

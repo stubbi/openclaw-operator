@@ -8,6 +8,7 @@ import (
 )
 
 // OpenClawInstanceSpec defines the desired state of OpenClawInstance
+// +kubebuilder:validation:XValidation:rule="!has(self.plugins) || size(self.plugins) == 0 || !has(self.verifiedPlugins) || size(self.verifiedPlugins) == 0",message="plugins and verifiedPlugins are mutually exclusive"
 type OpenClawInstanceSpec struct {
 	// Registry is the global container image registry override.
 	// When set, this registry replaces the registry part of all container images
@@ -62,15 +63,27 @@ type OpenClawInstanceSpec struct {
 
 	// Plugins is a list of plugins to install via init container.
 	// Each entry is an npm package name (e.g., "@openclaw/matrix" or
-	// "@martian-engineering/lossless-claw"). An optional "npm:" prefix is
-	// accepted and stripped before installation.
-	// Installation goes through the OpenClaw CLI's ClawHub installer
+	// "@martian-engineering/lossless-claw"). An optional "npm:" prefix
+	// selects the npm resolver; entries without a prefix use ClawHub.
+	// Installation goes through the OpenClaw CLI's installer
 	// ("openclaw plugins install clawhub:<pkg>") rather than raw npm install
 	// so packages published with workspace:* dependency markers resolve
 	// correctly. npm lifecycle scripts are disabled for security.
 	// +kubebuilder:validation:MaxItems=20
 	// +optional
 	Plugins []string `json:"plugins,omitempty"`
+
+	// VerifiedPlugins installs exact public npm artifacts after checking registry
+	// metadata and downloaded bytes against a committed SHA-512 integrity value.
+	// Mutually exclusive with Plugins. Requires an OpenClaw image supporting
+	// npm-pack: installs and --accept-capabilities. Changes trigger a pod rollout.
+	// Install-only: removing entries does not uninstall persisted plugins or
+	// revoke consent. This is not an exclusive runtime plugin allowlist.
+	// +kubebuilder:validation:MaxItems=20
+	// +listType=map
+	// +listMapKey=package
+	// +optional
+	VerifiedPlugins []VerifiedPluginSpec `json:"verifiedPlugins,omitempty"`
 
 	// EnvFrom is a list of sources to populate environment variables from
 	// Use this for API keys and other secrets (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY)

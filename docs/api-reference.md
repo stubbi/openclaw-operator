@@ -910,7 +910,8 @@ _Appears in:_
 | `workspace` _[WorkspaceSpec](#workspacespec)_ | Workspace configures initial workspace files seeded into the instance.<br />Files are copied once on first boot and never overwritten, so agent<br />modifications survive pod restarts. |  | Optional: \{\} <br /> |
 | `skills` _string array_ | Skills is a list of skills to install via init container.<br />Each entry is either a ClawHub skill identifier (e.g., "@anthropic/mcp-server-fetch")<br />or an npm package prefixed with "npm:" (e.g., "npm:@openclaw/matrix").<br />npm lifecycle scripts are disabled for security (see #91). |  | MaxItems: 20 <br />Optional: \{\} <br /> |
 | `skillPackUpdatePolicy` _string_ | SkillPackUpdatePolicy controls how workspace files seeded from "pack:"<br />skill entries are reconciled on pod start.<br />"Replace" (default) converges seeded pack files to the declared pack<br />revision on every pod start: changed files are overwritten and files that<br />were seeded by a previous revision but are no longer part of any declared<br />pack are removed. The operator tracks the seeded file set in a manifest<br />at /data/.skillpack-manifest on the data volume.<br />"CreateOnly" preserves the legacy behavior: pack files are only copied<br />when absent and never overwritten or removed, so updating a pinned pack<br />revision does not refresh already-seeded contents (see #564).<br />Only files at paths declared by pack: entries are affected; files from<br />spec.workspace.initialFiles are always seeded create-only. | Replace | Enum: [Replace CreateOnly] <br />Optional: \{\} <br /> |
-| `plugins` _string array_ | Plugins is a list of plugins to install via init container.<br />Each entry is an npm package name (e.g., "@openclaw/matrix" or<br />"@martian-engineering/lossless-claw"). An optional "npm:" prefix is<br />accepted and stripped before installation.<br />Installation goes through the OpenClaw CLI's ClawHub installer<br />("openclaw plugins install clawhub:<pkg>") rather than raw npm install<br />so packages published with workspace:* dependency markers resolve<br />correctly. npm lifecycle scripts are disabled for security. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
+| `plugins` _string array_ | Plugins is a list of plugins to install via init container.<br />Each entry is an npm package name (e.g., "@openclaw/matrix" or<br />"@martian-engineering/lossless-claw"). An optional "npm:" prefix<br />selects the npm resolver; entries without a prefix use ClawHub.<br />Installation goes through the OpenClaw CLI's installer<br />("openclaw plugins install clawhub:<pkg>") rather than raw npm install<br />so packages published with workspace:* dependency markers resolve<br />correctly. npm lifecycle scripts are disabled for security. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
+| `verifiedPlugins` _[VerifiedPluginSpec](#verifiedpluginspec) array_ | VerifiedPlugins installs exact public npm artifacts after checking registry<br />metadata and downloaded bytes against a committed SHA-512 integrity value.<br />Mutually exclusive with Plugins. Requires an OpenClaw image supporting<br />npm-pack: installs and --accept-capabilities. Changes trigger a pod rollout.<br />Install-only: removing entries does not uninstall persisted plugins or<br />revoke consent. This is not an exclusive runtime plugin allowlist. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
 | `envFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#envfromsource-v1-core) array_ | EnvFrom is a list of sources to populate environment variables from<br />Use this for API keys and other secrets (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY) |  | Optional: \{\} <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#envvar-v1-core) array_ | Env is a list of environment variables to set in the container |  | Optional: \{\} <br /> |
 | `resources` _[ResourcesSpec](#resourcesspec)_ | Resources specifies the compute resources for the OpenClaw container |  | Optional: \{\} <br /> |
@@ -1351,6 +1352,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `persistence` _[PersistenceSpec](#persistencespec)_ | Persistence configures the PersistentVolumeClaim |  | Optional: \{\} <br /> |
+| `fixOwnership` _boolean_ | FixOwnership runs the operator-managed init-data-owner init container,<br />which chowns the root of the data volume to the pod's runAsUser:runAsGroup<br />when it is owned by someone else (typically root). Kubernetes only applies<br />fsGroup to a volume root, so on most PVCs the directory mounted at<br />~/.openclaw stays owned by root. OpenClaw >= 2026.9 tightens directory<br />modes on that path when it writes config and fails with<br />"EPERM: operation not permitted, fchmod" if the directory is not owned by<br />the pod UID. The init container runs as root with only CAP_CHOWN and<br />exits immediately when ownership is already correct. Set to false on<br />clusters that forbid root init containers (e.g. the "restricted" Pod<br />Security Standard) and fix ownership out of band instead. | true | Optional: \{\} <br /> |
 
 
 #### TailscaleImageSpec
@@ -1414,6 +1416,27 @@ _Appears in:_
 | `repository` _string_ | Repository is the container image repository. | ghcr.io/astral-sh/uv | Optional: \{\} <br /> |
 | `tag` _string_ | Tag is the container image tag. | 0.6-bookworm-slim | Optional: \{\} <br /> |
 | `digest` _string_ | Digest is the container image digest for supply chain security.<br />When set, it takes precedence over Tag. |  | Optional: \{\} <br /> |
+
+
+#### VerifiedPluginSpec
+
+
+
+VerifiedPluginSpec identifies a reviewed plugin artifact on registry.npmjs.org.
+Integrity covers the package archive, not its transitive dependencies or files
+subsequently modified on the persistent volume. Consent is not a sandbox.
+
+
+
+_Appears in:_
+- [OpenClawInstanceSpec](#openclawinstancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `package` _string_ | Package is an npm package name without a source prefix or version suffix. |  | MaxLength: 214 <br />Pattern: `^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$` <br /> |
+| `version` _string_ | Version is an exact SemVer version, including optional prerelease/build<br />identifiers. Tags, ranges and a leading v are not accepted. |  | MaxLength: 128 <br />Pattern: `^(0\|[1-9][0-9]*)\.(0\|[1-9][0-9]*)\.(0\|[1-9][0-9]*)(-((0\|[1-9][0-9]*\|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0\|[1-9][0-9]*\|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$` <br /> |
+| `integrity` _string_ | Integrity is the canonical SHA-512 SRI digest committed alongside Version.<br />Both npm dist.integrity and the downloaded archive must match this value. |  | Pattern: `^sha512-[A-Za-z0-9+/]\{85\}[AQgw]==$` <br /> |
+| `acceptCapabilities` _boolean_ | AcceptCapabilities explicitly consents to the pinned artifact's declared<br />OpenClaw capabilities after verification. Defaults to false; installs that<br />require consent fail without it. Review capabilities whenever pins change. |  | Optional: \{\} <br /> |
 
 
 #### WebTerminalCredentialSpec

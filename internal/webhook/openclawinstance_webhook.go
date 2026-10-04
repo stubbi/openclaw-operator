@@ -290,6 +290,10 @@ func (v *OpenClawInstanceValidator) validate(instance *openclawv1alpha1.OpenClaw
 		}
 	}
 
+	if err := validateVerifiedPlugins(&instance.Spec); err != nil {
+		return nil, err
+	}
+
 	// 16. Validate CA bundle spec
 	if cab := instance.Spec.Security.CABundle; cab != nil {
 		if cab.ConfigMapName != "" && cab.SecretName != "" {

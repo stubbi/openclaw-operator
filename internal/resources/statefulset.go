@@ -489,7 +489,7 @@ func buildMainEnv(instance *openclawv1alpha1.OpenClawInstance, gatewayTokenSecre
 
 	// Plugin discovery - set NODE_PATH so Node.js module resolution finds
 	// packages installed by the init-plugins container in the PVC (#424)
-	if len(instance.Spec.Plugins) > 0 {
+	if hasPlugins(instance) {
 		env = append(env, corev1.EnvVar{
 			Name:  "NODE_PATH",
 			Value: "/home/openclaw/.openclaw/node_modules",
@@ -1388,8 +1388,14 @@ func BuildPluginsScript(instance *openclawv1alpha1.OpenClawInstance) string {
 // npm lifecycle scripts are disabled globally via NPM_CONFIG_IGNORE_SCRIPTS.
 func buildPluginsInitContainer(instance *openclawv1alpha1.OpenClawInstance) *corev1.Container {
 	script := BuildPluginsScript(instance)
-	if script == "" {
+	if !hasPlugins(instance) {
 		return nil
+	}
+	command := []string{"sh", "-c", script}
+	var args []string
+	if len(instance.Spec.VerifiedPlugins) > 0 {
+		command = []string{"node", "--input-type=module", "--eval", verifiedPluginsInstaller}
+		args = verifiedPluginArgs(instance)
 	}
 
 	// Mirror the main container's PVC subpath layout so the `openclaw plugins
@@ -1440,7 +1446,8 @@ func buildPluginsInitContainer(instance *openclawv1alpha1.OpenClawInstance) *cor
 	return &corev1.Container{
 		Name:                     "init-plugins",
 		Image:                    GetImage(instance),
-		Command:                  []string{"sh", "-c", script},
+		Command:                  command,
+		Args:                     args,
 		ImagePullPolicy:          getPullPolicy(instance),
 		Env:                      env,
 		EnvFrom:                  instance.Spec.EnvFrom,
@@ -3098,6 +3105,9 @@ func calculateConfigHash(instance *openclawv1alpha1.OpenClawInstance, skillPacks
 				h.Write(wsSkillsData)
 			}
 		}
+	}
+	if len(instance.Spec.VerifiedPlugins) > 0 {
+		h.Write([]byte(verifiedPluginArgs(instance)[0]))
 	}
 	if len(instance.Spec.Plugins) > 0 {
 		pluginsData, _ := json.Marshal(instance.Spec.Plugins)

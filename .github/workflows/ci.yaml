@@ -151,6 +151,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Run tests
         run: make test
 

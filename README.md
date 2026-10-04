@@ -663,13 +663,42 @@ spec:
     - "some-other-plugin"
 ```
 
-Plugin entries are resolved through the OpenClaw CLI's ClawHub installer, not raw `npm install`. An optional `npm:` prefix is accepted for compatibility and stripped before installation, so `npm:@scope/plugin` and `@scope/plugin` both run as `openclaw plugins install clawhub:@scope/plugin`. Use `spec.skills` when you need npm package source selection for skills.
+Plugin entries without a prefix are resolved through the OpenClaw CLI’s ClawHub installer. An explicit `npm:` prefix selects the CLI’s npm resolver. Both paths accept exact versions, for example `npm:@scope/plugin@1.2.3`; neither lets the instance manifest enforce an expected artifact hash.
 
 This is the layout the OpenClaw gateway's plugin discovery expects - it scans direct subdirectories of `~/.openclaw/extensions/` for plugin manifests and skips `node_modules/` entirely. The init container shells out to `openclaw plugins install clawhub:<pkg>` so plugins published with `workspace:*` dependency markers, such as the first-party `@openclaw/matrix`, resolve correctly. Raw `npm install` rejects those with `EUNSUPPORTEDPROTOCOL`.
 
 npm lifecycle scripts are disabled globally on the init container (`NPM_CONFIG_IGNORE_SCRIPTS=true`) to mitigate supply chain attacks. The PVC backs `~/.openclaw/`, so installs persist across pod restarts.
 
 > If you previously worked around the install-path bug by adding `plugins.load.paths` entries to your gateway config (pointing at `~/.openclaw/node_modules/<pkg>`), that workaround is no longer needed and can be removed - plugins now land in the documented location and are auto-discovered.
+
+#### Verified plugin installation
+
+Use `spec.verifiedPlugins` to commit an exact public npm version and its reviewed SHA-512 SRI digest together:
+
+```yaml
+spec:
+  verifiedPlugins:
+    - package: "@openclaw/brave-plugin"
+      version: "2026.9.1"
+      integrity: "sha512-4+j+eQTToV3k7Cb25MUL6h2uL8cJYyuLytfpd/sJK/HjR43dgKBqKpBsb1+I3w1Jr6PLpnjSf6/I3//3K0cdnA=="
+      acceptCapabilities: true
+```
+
+This is an alternative to `spec.plugins`; the two nonempty lists cannot be combined. Third-party scoped and unscoped npm packages are supported. Versions must be exact SemVer, including optional prerelease/build identifiers; tags and ranges are rejected. Packages sharing an unscoped basename are rejected to avoid collisions on runtimes that use package basenames as installation directories.
+
+The operator uses the instance's runtime image and existing plugin storage/CA settings. Before passing an archive to `openclaw plugins install --force npm-pack:<archive>`, it checks the registry's package name, version, and `dist.integrity`, then hashes the downloaded bytes against the committed digest. Verification failures stop the init container and prevent gateway startup. Each download rejects redirects, has a 60-second deadline, and is limited to 1 MiB for metadata or 32 MiB for archives. CLI installation has a five-minute deadline. Archives are removed after successful or failed CLI execution. A failed multi-plugin installation may leave earlier plugins installed; a restart verifies and reinstalls every entry.
+
+Like `spec.plugins`, this list requests installations; it is not an exclusive runtime allowlist. Removing an entry does not uninstall its persisted files or revoke its capability consent, and removing the final entry omits the plugin init container. Previously installed plugins may still load according to OpenClaw's configuration and discovery rules. Switching from `spec.plugins` to `spec.verifiedPlugins` does not verify or remove other plugins already present on the PVC. Manage disabling or uninstalling those plugins separately; automatic removal and ownership tracking are outside this feature.
+
+`acceptCapabilities` defaults to false. Setting it to true passes `--accept-capabilities` only after verification. Review the pinned plugin's declared capabilities before setting consent and whenever updating its version or digest. `--force` acknowledges source trust and permits replacement; it does not substitute for capability consent. A plugin requiring consent fails noninteractively when consent is absent.
+
+Provision the PVC state directory with ownership matching the runtime UID. OpenClaw 2026.9.4 tightens state-directory permissions during installation, so group write access alone to a root-owned directory is insufficient; this requirement also affects legacy plugin installs.
+
+Use an OpenClaw image that supports `npm-pack:` and `--accept-capabilities`; older images fail installation rather than falling back to an unverified resolver. The example pins are installation inputs, not a claim that every runtime version is compatible. Pin and test your runtime image alongside plugin updates. Version, digest, or consent changes trigger a pod rollout.
+
+The initial implementation supports `https://registry.npmjs.org` with same-origin tarballs and no redirects. Private registries, authenticated downloads, and ClawHub artifact verification are outside this path. Integrity covers the reviewed package archive, not transitive dependencies fetched by OpenClaw or later changes to installed files on the PVC. Capability consent is not a runtime sandbox. npm lifecycle scripts remain disabled.
+
+Obtain candidate metadata with `npm view <package>@<exact-version> dist.integrity`, review the artifact and capabilities, and commit version/digest changes together. The installer never replaces the committed digest with a newly discovered value. See [installer tests](test/installer/README.md) for reproducible failure cases and real-image compatibility testing.
 
 ### Workspace seeding
 
