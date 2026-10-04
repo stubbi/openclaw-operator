@@ -88,10 +88,6 @@ kubebuilder-generated config/rbac/role.yaml.
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
-# Read the instance namespace's Pod Security labels (storage.fixOwnership default)
-- apiGroups: [""]
-  resources: ["namespaces"]
-  verbs: ["get"]
 # Apps API
 - apiGroups: ["apps"]
   resources: ["statefulsets"]
@@ -163,6 +159,13 @@ hack/check-helm-rbac-sync.sh parses this define alongside managerRules so the
 union is asserted to be a superset of config/rbac/role.yaml.
 */}}
 {{- define "openclaw-operator.clusterScopedRules" -}}
+# Read the instance namespace's Pod Security labels (storage.fixOwnership default)
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
+{{- if .Values.watchNamespaces }}
+  resourceNames: {{ .Values.watchNamespaces | toJson }}
+{{- end }}
 # OpenClawClusterDefaults singleton (#457)
 - apiGroups: ["openclaw.rocks"]
   resources: ["openclawclusterdefaults"]

@@ -151,6 +151,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - uses: azure/setup-helm@v4
+
       - name: Run tests
         run: make test
 
