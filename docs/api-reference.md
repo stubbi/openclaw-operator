@@ -1350,6 +1350,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `persistence` _[PersistenceSpec](#persistencespec)_ | Persistence configures the PersistentVolumeClaim |  | Optional: \{\} <br /> |
+| `fixOwnership` _boolean_ | FixOwnership runs the operator-managed init-data-owner init container,<br />which chowns the root of the data volume to the pod's runAsUser:runAsGroup<br />when it is owned by someone else (typically root). Kubernetes only applies<br />fsGroup to a volume root, so on most PVCs the directory mounted at<br />~/.openclaw stays owned by root. OpenClaw >= 2026.9 tightens directory<br />modes on that path when it writes config and fails with<br />"EPERM: operation not permitted, fchmod" if the directory is not owned by<br />the pod UID. The init container runs as root with only CAP_CHOWN and<br />exits immediately when ownership is already correct.<br />When unset, the init container runs unless the instance's namespace<br />enforces the "restricted" Pod Security Standard<br />(pod-security.kubernetes.io/enforce=restricted), which would reject a<br />root init container at admission. In such namespaces fix ownership out<br />of band instead. Set to true to always run it, or false to never run it. |  | Optional: \{\} <br /> |
 
 
 #### TailscaleImageSpec

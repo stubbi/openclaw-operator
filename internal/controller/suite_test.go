@@ -87,6 +87,7 @@ var _ = BeforeSuite(func() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("openclawinstance-controller"),
 		OperatorNamespace: "default",
+		APIReader:         mgr.GetAPIReader(),
 	}).SetupWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 

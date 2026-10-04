@@ -88,6 +88,10 @@ kubebuilder-generated config/rbac/role.yaml.
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
+# Read the instance namespace's Pod Security labels (storage.fixOwnership default)
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
 # Apps API
 - apiGroups: ["apps"]
   resources: ["statefulsets"]

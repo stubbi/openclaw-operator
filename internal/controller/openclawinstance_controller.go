@@ -86,6 +86,11 @@ type OpenClawInstanceReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	// APIReader reads straight from the API server, bypassing the cache. It is
+	// used for the instance's Namespace, which the operator only has "get"
+	// permission for (a cached read would need a cluster-wide list/watch).
+	// Optional: when nil, namespace-dependent defaults are skipped.
+	APIReader         client.Reader
 	VersionResolver   *registry.Resolver
 	SkillPackResolver *skillpacks.Resolver
 }
@@ -111,6 +116,7 @@ type OpenClawInstanceReconciler struct {
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
@@ -383,6 +389,35 @@ func (r *OpenClawInstanceReconciler) applyClusterDefaults(ctx context.Context, i
 	return nil
 }
 
+// applyNamespaceDefaults resolves spec fields whose default depends on the
+// instance's namespace. It only mutates the in-memory instance used for
+// rendering; the stored spec is never written back.
+//
+// storage.fixOwnership: the init-data-owner init container runs as root with
+// CAP_CHOWN. A namespace that enforces the "restricted" Pod Security Standard
+// rejects such a pod at admission, which would take a running instance down on
+// its next rollout. When the user left the field unset, skip the init
+// container there. An explicit true or false is always honored.
+//
+// Failing to read the namespace (for example RBAC that predates the
+// namespaces "get" rule) is not fatal: the default stays on, as documented.
+func (r *OpenClawInstanceReconciler) applyNamespaceDefaults(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance) {
+	if instance.Spec.Storage.FixOwnership != nil || r.APIReader == nil {
+		return
+	}
+	logger := log.FromContext(ctx)
+
+	ns := &corev1.Namespace{}
+	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: instance.Namespace}, ns); err != nil {
+		logger.V(1).Info("could not read namespace to resolve storage.fixOwnership; keeping it enabled", "error", err.Error())
+		return
+	}
+	if resources.NamespaceEnforcesRestrictedPodSecurity(ns.Labels) {
+		instance.Spec.Storage.FixOwnership = resources.Ptr(false)
+		logger.V(1).Info("namespace enforces the restricted Pod Security Standard; skipping init-data-owner")
+	}
+}
+
 // reconcileResources reconciles all managed resources
 func (r *OpenClawInstanceReconciler) reconcileResources(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance) error {
 	logger := log.FromContext(ctx)
@@ -394,6 +429,10 @@ func (r *OpenClawInstanceReconciler) reconcileResources(ctx context.Context, ins
 	if err := r.applyClusterDefaults(ctx, instance); err != nil {
 		return fmt.Errorf("failed to apply cluster defaults: %w", err)
 	}
+
+	// Resolve defaults that depend on the instance's namespace. Like cluster
+	// defaults, this only touches the in-memory copy.
+	r.applyNamespaceDefaults(ctx, instance)
 
 	// 1. Reconcile RBAC (ServiceAccount, Role, RoleBinding)
 	if err := r.reconcileRBAC(ctx, instance); err != nil {

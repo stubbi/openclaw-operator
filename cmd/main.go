@@ -167,6 +167,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("openclawinstance-controller"),
 		OperatorNamespace: operatorNamespace,
+		APIReader:         mgr.GetAPIReader(),
 		VersionResolver:   versionResolver,
 		SkillPackResolver: skillPackResolver,
 	}).SetupWithManager(mgr); err != nil {

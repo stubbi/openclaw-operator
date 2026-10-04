@@ -184,3 +184,30 @@ func TestIsDataOwnershipFixEnabled(t *testing.T) {
 		t.Error("false should be disabled")
 	}
 }
+
+func TestNamespaceEnforcesRestrictedPodSecurity(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		labels map[string]string
+		want   bool
+	}{
+		{name: "no labels", labels: nil, want: false},
+		{name: "enforce restricted", labels: map[string]string{PodSecurityEnforceLabel: "restricted"}, want: true},
+		{name: "enforce baseline", labels: map[string]string{PodSecurityEnforceLabel: "baseline"}, want: false},
+		{name: "enforce privileged", labels: map[string]string{PodSecurityEnforceLabel: "privileged"}, want: false},
+		{
+			name: "warn and audit restricted do not block pods",
+			labels: map[string]string{
+				"pod-security.kubernetes.io/warn":  "restricted",
+				"pod-security.kubernetes.io/audit": "restricted",
+			},
+			want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NamespaceEnforcesRestrictedPodSecurity(tt.labels); got != tt.want {
+				t.Errorf("NamespaceEnforcesRestrictedPodSecurity(%v) = %v, want %v", tt.labels, got, tt.want)
+			}
+		})
+	}
+}

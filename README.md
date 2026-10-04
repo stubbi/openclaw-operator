@@ -933,7 +933,15 @@ Kubernetes applies `fsGroup` to the root of a volume but never changes its owner
 
 The operator therefore runs an `init-data-owner` init container first on every pod start. It runs as root with every capability dropped except `CHOWN`, changes the owner of the volume root to the pod's `runAsUser:runAsGroup` when it differs, and exits without touching anything when ownership is already correct. Children of the volume root are created by the pod UID and are never modified.
 
-If your cluster forbids root init containers (for example the `restricted` Pod Security Standard), disable it and fix ownership out of band once per PVC:
+Namespaces that enforce the `restricted` Pod Security Standard (`pod-security.kubernetes.io/enforce: restricted`) reject root init containers at admission. The operator detects that label and leaves `init-data-owner` out there automatically, so upgrading the operator never blocks pods in a restricted namespace. In those namespaces fix ownership out of band once per PVC (for example with a one-off Job in a namespace that permits it, or through your storage provisioner) before moving to OpenClaw 2026.9 or later.
+
+`spec.storage.fixOwnership` overrides the automatic behavior:
+
+| Value | Behavior |
+|-------|----------|
+| unset (default) | Run `init-data-owner`, except in namespaces that enforce the `restricted` Pod Security Standard |
+| `true` | Always run it (use when the namespace is exempted from Pod Security Admission some other way) |
+| `false` | Never run it (use when another admission policy forbids root init containers) |
 
 ```yaml
 spec:
