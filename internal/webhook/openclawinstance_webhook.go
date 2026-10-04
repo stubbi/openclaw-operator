@@ -710,6 +710,7 @@ var reservedInitContainerNames = map[string]bool{
 	"init-plugins":             true,
 	"init-ollama":              true,
 	"init-plugin-runtime-deps": true,
+	"init-tmp-dir":             true,
 }
 
 // validateInitContainers checks custom init container names.
