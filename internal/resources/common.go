@@ -387,9 +387,22 @@ func IsPersistenceEnabled(instance *openclawv1alpha1.OpenClawInstance) bool {
 }
 
 // IsDataOwnershipFixEnabled returns whether the init-data-owner init container
-// runs. Defaults to true; see StorageSpec.FixOwnership.
+// runs. Defaults to true; see StorageSpec.FixOwnership. The controller resolves
+// an unset value to false for namespaces that enforce the "restricted" Pod
+// Security Standard before the builders run.
 func IsDataOwnershipFixEnabled(instance *openclawv1alpha1.OpenClawInstance) bool {
 	return instance.Spec.Storage.FixOwnership == nil || *instance.Spec.Storage.FixOwnership
+}
+
+// PodSecurityEnforceLabel is the namespace label Pod Security Admission reads
+// to pick the Pod Security Standard it enforces.
+const PodSecurityEnforceLabel = "pod-security.kubernetes.io/enforce"
+
+// NamespaceEnforcesRestrictedPodSecurity reports whether a namespace with the
+// given labels rejects pods that violate the "restricted" Pod Security
+// Standard. Only the enforce mode matters: audit and warn never block a pod.
+func NamespaceEnforcesRestrictedPodSecurity(namespaceLabels map[string]string) bool {
+	return namespaceLabels[PodSecurityEnforceLabel] == "restricted"
 }
 
 // ChromiumPVCName returns the name of the Chromium browser profile PVC

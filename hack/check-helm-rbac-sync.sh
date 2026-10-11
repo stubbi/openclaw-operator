@@ -72,7 +72,8 @@ parse_generated() {
 parse_helm() {
   awk '
     /\{\{-? *define .openclaw-operator\.(managerRules|clusterScopedRules). *-?\}\}/ { in_rules = 1; next }
-    in_rules && /\{\{-? *end *-?\}\}/ { in_rules = 0; next }
+    in_rules && /\{\{-? *end *-?\}\}/ { if (depth > 0) { depth--; next }; in_rules = 0; next }
+    in_rules && /\{\{-? *if / { depth++; next }
     !in_rules { next }
     /^\s*#/ { next }
 
