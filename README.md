@@ -1005,7 +1005,17 @@ Kubernetes applies `fsGroup` to the root of a volume but never changes its owner
 
 The operator therefore runs an `init-data-owner` init container first on every pod start. It runs as root with every capability dropped except `CHOWN`, changes the owner of the volume root to the gateway's effective UID and the pod's `runAsGroup` when it differs, and exits without touching anything when ownership is already correct. The effective UID uses `security.containerSecurityContext.runAsUser` when set, otherwise the pod UID. Operator-managed init containers that write to the data volume use the same UID override, so they can access the directory after the gateway tightens its permissions. The ownership helper does not modify existing children; changing the runtime UID of an existing installation may require an out-of-band migration of those files. User-defined init containers retain their configured identities.
 
-If your cluster forbids root init containers (for example the `restricted` Pod Security Standard), disable it and fix ownership out of band once per PVC:
+Namespaces that enforce the `restricted` Pod Security Standard (`pod-security.kubernetes.io/enforce: restricted`) reject root init containers at admission. The operator detects that label and leaves `init-data-owner` out there automatically, so upgrading the operator never blocks pods in a restricted namespace. In those namespaces fix ownership out of band once per PVC (for example with a one-off Job in a namespace that permits it, or through your storage provisioner) before moving to OpenClaw 2026.9 or later.
+
+To detect the label the operator needs `get` on `namespaces` (granted by the Helm chart, the OLM bundle, and `config/rbac`). If it cannot read the instance's Namespace, it does not guess: reconciliation fails with a `ReconcileFailed` event naming the missing permission and is retried, without changing the existing StatefulSet. Setting `spec.storage.fixOwnership` explicitly skips the lookup.
+
+`spec.storage.fixOwnership` overrides the automatic behavior:
+
+| Value | Behavior |
+|-------|----------|
+| unset (default) | Run `init-data-owner`, except in namespaces that enforce the `restricted` Pod Security Standard |
+| `true` | Always run it (use when the namespace is exempted from Pod Security Admission some other way) |
+| `false` | Never run it (use when another admission policy forbids root init containers) |
 
 ```yaml
 spec:
@@ -1156,7 +1166,7 @@ The operator builds a single `PathPrefix: /` rule routing to the instance Servic
 
 ### Custom service ports
 
-By default the operator creates a Service with the gateway (18789) and canvas (18793) ports. To expose custom ports instead (e.g., for a non-default application), set `spec.networking.service.ports`:
+By default the operator creates a Service with the gateway (18789) and canvas (18793) ports, plus the MCP Apps sandbox (18795) port when MCP Apps is enabled (see below). To expose custom ports instead (e.g., for a non-default application), set `spec.networking.service.ports`:
 
 ```yaml
 spec:
@@ -1170,6 +1180,27 @@ spec:
 ```
 
 When `ports` is set, it fully replaces the default ports -- including the Chromium port if the sidecar is enabled. To keep the defaults alongside custom ports, include them explicitly. If `targetPort` is omitted it defaults to `port`. See the [API reference](docs/api-reference.md#specnetworkingservice) for all fields.
+
+### MCP Apps sandbox
+
+OpenClaw's [MCP Apps](https://docs.openclaw.ai/cli/mcp/apps) and script-enabled dashboard widgets are served from a separate sandbox listener. Upstream defaults that listener to the gateway port plus one (18790) on loopback, which inside an operator-managed pod is the port the gateway proxy sidecar already listens on. The operator therefore handles the sandbox like the gateway and canvas ports:
+
+- When `mcp.apps.enabled` is `true` in your OpenClaw config and `mcp.apps.sandboxPort` is not set, the operator sets `mcp.apps.sandboxPort` to `18795`. A port you set yourself wins.
+- With the gateway proxy enabled (the default), the proxy sidecar forwards pod port `18796` to the loopback sandbox listener. With `spec.gateway.enabled: false` the Service targets the sandbox listener port directly.
+- The Service exposes port `18795` (named `mcp-apps`), and the NetworkPolicy allows ingress to it under the same rules as the gateway and canvas ports.
+- These ports are only added when MCP Apps is enabled in `spec.config.raw`, so instances that do not use MCP Apps keep their pod template, Service and NetworkPolicy unchanged. The operator cannot see the effective config when it comes from `spec.config.configMapRef` or when `mergeMode: merge` lets runtime changes on the PVC enable MCP Apps, so in those cases the sandbox ports are always added.
+
+```yaml
+spec:
+  config:
+    raw:
+      mcp:
+        apps:
+          enabled: true
+          sandboxOrigin: "https://apps.openclaw.example.com"
+```
+
+OpenClaw requires the sandbox origin to differ from the Control UI origin, so give it a dedicated hostname and route only that hostname to Service port `18795` with your own Ingress or HTTPRoute. If you set `mcp.apps.sandboxPort` yourself, the proxy, the Service and the NetworkPolicy follow it. One exception: with `spec.config.configMapRef` and the gateway proxy disabled, the operator cannot read your port and the Service targets `18795`, so keep the default there. With `spec.networking.service.ports` set, add the `mcp-apps` port (target port `18796`, or your sandbox port when the proxy is disabled) to your list explicitly.
 
 ### CA bundle injection
 
@@ -1306,7 +1337,7 @@ The operator follows a **secure-by-default** philosophy. Every instance ships wi
 ### Defaults
 
 - **Non-root execution**: containers run as UID 1000; root (UID 0) is blocked by the validating webhook (exception: Ollama sidecar requires root per the official image)
-- **Read-only root filesystem**: enabled by default for the main container and the Chromium sidecar; the PVC at `~/.openclaw/` provides writable home, and a `/tmp` emptyDir handles temp files
+- **Read-only root filesystem**: enabled by default for the main container and the Chromium sidecar; the PVC at `~/.openclaw/` provides writable home, and a `/tmp` emptyDir handles temp files. The `init-tmp-dir` init container gives that `/tmp` the sticky bit (mode `1777`), which OpenClaw 2026.9.6 and later require before they create temporary workspaces; the root of an emptyDir is `2777` under `fsGroup` and cannot be changed from the pod spec
 - **All capabilities dropped**: no ambient Linux capabilities
 - **Seccomp RuntimeDefault**: syscall filtering enabled
 - **Default-deny NetworkPolicy**: DNS (53) and HTTPS (443) egress allowed by default; set `security.networkPolicy.allowHTTPS: false` and use `additionalEgress` to restrict HTTPS destinations (see [Network Isolation](docs/architecture.md#network-isolation)). Ingress is limited to the same namespace. Metrics ingress is a separate rule that can be restricted independently -- see [Restricting who can scrape metrics](#restricting-who-can-scrape-metrics)

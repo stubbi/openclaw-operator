@@ -100,6 +100,18 @@ func networkPolicyIngressPorts(instance *openclawv1alpha1.OpenClawInstance) []ne
 		},
 	}
 
+	// MCP Apps sandbox (#615): same target port as the Service uses.
+	if sandbox := ResolveMcpAppsSandbox(instance); sandbox.Exposed {
+		mcpAppsPort := int32(McpAppsSandboxProxyPort)
+		if !IsGatewayProxyEnabled(instance) {
+			mcpAppsPort = sandbox.ListenPort
+		}
+		ports = append(ports, networkingv1.NetworkPolicyPort{
+			Protocol: Ptr(corev1.ProtocolTCP),
+			Port:     Ptr(intstr.FromInt32(mcpAppsPort)),
+		})
+	}
+
 	if instance.Spec.WebTerminal.Enabled {
 		ports = append(ports, networkingv1.NetworkPolicyPort{
 			Protocol: Ptr(corev1.ProtocolTCP),
