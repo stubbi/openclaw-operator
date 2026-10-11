@@ -210,8 +210,13 @@ Automated via release-please + GoReleaser:
 - `.release-please-manifest.json` — tracks current version
 - `.goreleaser.yaml` — `release.draft: true` (immutable releases require draft→publish flow)
 
-**Secrets required:**
-- `RELEASE_PLEASE_TOKEN` — classic PAT with `repo` scope; used for tag creation, release publishing, and OperatorHub cross-repo PRs
+**Credentials (repository settings):**
+- `vars.RELEASE_BOT_APP_ID` + `secrets.RELEASE_BOT_PRIVATE_KEY` — GitHub App used by release-please and for publishing the release, so the tag push and `release: published` trigger `release.yaml` and `operatorhub.yaml`. Preferred.
+- `secrets.RELEASE_PLEASE_TOKEN` — PAT fallback when the App is not configured.
+- Neither set: both workflows fall back to `GITHUB_TOKEN` and dispatch `release.yaml` / `operatorhub.yaml` explicitly. The release PR then gets no automatic CI run (push an empty commit to it).
+- `vars.IMAGE_NAMESPACE` (default `paperclipinc`) — GHCR namespace for the image and the chart. Must match the chart's default `image.repository` (`release.yaml` fails early otherwise).
+- `secrets.GHCR_PUSH_TOKEN` + `vars.GHCR_PUSH_USER` — needed when `IMAGE_NAMESPACE` is owned by another account than the repository (the repository moved to `stubbi`; the images still live under `paperclipinc`).
+- `secrets.OPERATORHUB_FORK_TOKEN` — PAT for the OperatorHub cross-repo PRs.
 
 **Manual trigger:** `gh workflow run "OperatorHub Submission" -f tag=vX.Y.Z`
 
