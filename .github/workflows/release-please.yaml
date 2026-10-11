@@ -10,14 +10,34 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # Only needed by the GITHUB_TOKEN fallback below; the App token and the
+    # PAT carry their own permissions.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      # Credential precedence: GitHub App token > RELEASE_PLEASE_TOKEN PAT >
+      # GITHUB_TOKEN. Events created with GITHUB_TOKEN do not trigger other
+      # workflows, so with the fallback the release PR gets no CI run and the
+      # tag does not start release.yaml on its own (dispatched explicitly below).
+      HAS_APP: ${{ vars.RELEASE_BOT_APP_ID != '' }}
+      HAS_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     steps:
-      # Mint a short-lived token (~1h) from the paperclip-release-bot GitHub App.
-      # Avoids long-lived PATs that the paperclipinc org policy now blocks.
+      # Mint a short-lived token (~1h) from the release-bot GitHub App.
+      # Skipped when the App is not configured for this repository (e.g. right
+      # after a repository transfer, see #625) instead of failing the run.
       - uses: actions/create-github-app-token@v1
         id: app-token
+        if: vars.RELEASE_BOT_APP_ID != ''
         with:
           app-id: ${{ vars.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - name: Warn about fallback credentials
+        if: env.HAS_APP != 'true' && env.HAS_PAT != 'true'
+        run: |
+          echo "::warning::Neither vars.RELEASE_BOT_APP_ID nor secrets.RELEASE_PLEASE_TOKEN is set; using GITHUB_TOKEN. The release PR will not get CI runs automatically (push an empty commit to it or close/reopen it), and release.yaml is dispatched explicitly after tagging."
 
       - uses: googleapis/release-please-action@v4
         id: release
@@ -26,7 +46,7 @@ jobs:
           manifest-file: .release-please-manifest.json
           # App token makes the tag push appear as a user action,
           # which triggers downstream release.yaml. GITHUB_TOKEN cannot.
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
       # skip-github-release is set in release-please-config.json so that
       # release-please does NOT create a GitHub release (which would
@@ -36,7 +56,7 @@ jobs:
       # tag manually below, and flip stale labels in a separate step.
       - name: Create release tag
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLEASE_TOKEN || github.token }}
         run: |
           # Detect if the current push merged a release-please PR.
           # Check both the commit message (squash merge) and the merged
@@ -67,7 +87,13 @@ jobs:
               gh api "repos/${{ github.repository }}/git/refs" \
                 -f ref="refs/tags/${TAG}" \
                 -f sha="${{ github.sha }}"
-              echo "Tag ${TAG} created - release workflow will trigger"
+              echo "Tag ${TAG} created"
+              if [[ "${HAS_APP}" != "true" && "${HAS_PAT}" != "true" ]]; then
+                # A tag pushed with GITHUB_TOKEN does not fire release.yaml's
+                # push trigger, but a workflow_dispatch from GITHUB_TOKEN does.
+                echo "Dispatching release.yaml for ${TAG}"
+                gh workflow run release.yaml --repo "${{ github.repository }}" --ref "${TAG}"
+              fi
             fi
           else
             echo "Not a release commit, skipping tag creation"
@@ -81,7 +107,7 @@ jobs:
       # label gets fixed even if the tag step above was skipped or failed.
       - name: Fix stale autorelease labels
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLEASE_TOKEN || github.token }}
         run: |
           for STATE in merged closed; do
             STALE_PRS=$(gh pr list \
