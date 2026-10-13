@@ -198,6 +198,7 @@ func buildRcloneJob(
 	tolerations []corev1.Toleration,
 	serviceAccountName string,
 	credentialSecretName string,
+	backupSpec *openclawv1alpha1.BackupSpec,
 ) *batchv1.Job {
 	backoffLimit := int32(3)
 	ttl := int32(86400) // 24h
@@ -223,7 +224,14 @@ func buildRcloneJob(
 		// S3 -> PVC
 		args = append([]string{"sync", rcloneRemotePath, "/data/", providerFlag, "--s3-endpoint=$(S3_ENDPOINT)"}, authArgs...)
 	}
-	args = append(args, "--skip-links", "--transfers=8", "--checkers=16", "-v")
+	if isBackup {
+		// Kubernetes expands $(VAR) even in exec-form args. Preserve filter text.
+		for _, arg := range backupRcloneArgs(backupSpec) {
+			args = append(args, strings.ReplaceAll(arg, "$", "$$"))
+		}
+	} else {
+		args = append(args, "--skip-links", "--transfers=8", "--checkers=16", "-v")
+	}
 
 	if creds.Region != "" {
 		args = append(args, "--s3-region=$(S3_REGION)")
@@ -312,6 +320,37 @@ func buildRcloneJob(
 			},
 		},
 	}
+}
+
+// backupRcloneArgs is shared by every upload path. Typed options cannot override
+// credentials, destinations, or deletion behavior as arbitrary rclone args could.
+func backupRcloneArgs(spec *openclawv1alpha1.BackupSpec) []string {
+	transfers, checkers := int32(8), int32(16)
+	if spec.Transfers != nil {
+		transfers = *spec.Transfers
+	}
+	if spec.Checkers != nil {
+		checkers = *spec.Checkers
+	}
+	args := []string{"--skip-links", fmt.Sprintf("--transfers=%d", transfers), fmt.Sprintf("--checkers=%d", checkers), "-v"}
+	if spec.FastList {
+		args = append(args, "--fast-list")
+	}
+	for _, pattern := range spec.Excludes {
+		args = append(args, "--exclude="+pattern)
+	}
+	return args
+}
+
+// shellBackupRcloneArgs protects both shell metacharacters and kubelet's $(VAR)
+// expansion. The latter happens before sh parses the single-quoted arguments.
+func shellBackupRcloneArgs(spec *openclawv1alpha1.BackupSpec) string {
+	args := backupRcloneArgs(spec)
+	for i, arg := range args {
+		arg = strings.ReplaceAll(arg, "$", "$$")
+		args[i] = "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
+	}
+	return strings.Join(args, " ")
 }
 
 func int64Ptr(v int64) *int64 {
@@ -472,11 +511,11 @@ func buildBackupCronJob(
 			` && S3="%s"`+
 			// Step 1: incremental sync to fixed "latest" path
 			` && echo "Step 1: incremental sync to latest"`+
-			` && rclone sync /data/ "${S3}/latest" $R --skip-links --transfers=8 --checkers=16 -v`+
+			` && rclone sync /data/ "${S3}/latest" $R %s`+
 			// Step 2: daily snapshot (copy latest to snapshots/YYYY-MM-DD)
 			` && TODAY=$(date -u +%%Y-%%m-%%d)`+
 			` && echo "Step 2: snapshot ${TODAY}"`+
-			` && rclone copy "${S3}/latest" "${S3}/snapshots/${TODAY}" $R --transfers=8 --checkers=16 -v`+
+			` && rclone copy "${S3}/latest" "${S3}/snapshots/${TODAY}" $R %s`+
 			// Step 3: prune snapshots older than retention period
 			` && CUTOFF=$(date -u -d @$(($(date -u +%%s) - 86400 * %d)) +%%Y-%%m-%%d)`+
 			` && echo "Step 3: pruning snapshots older than ${CUTOFF} (%d day retention)"`+
@@ -488,7 +527,7 @@ func buildBackupCronJob(
 			`   fi;`+
 			` done`+
 			` && echo "Backup complete"`,
-		s3Flags, remote,
+		s3Flags, remote, shellBackupRcloneArgs(&instance.Spec.Backup), shellBackupRcloneArgs(&instance.Spec.Backup),
 		retentionDays, retentionDays,
 	)
 

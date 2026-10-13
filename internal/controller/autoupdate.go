@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -39,6 +40,7 @@ import (
 
 const (
 	updatePhaseBackingUp      = "BackingUp"
+	updatePhaseAbortingBackup = "AbortingBackup"
 	updatePhaseApplyingUpdate = "ApplyingUpdate"
 	updatePhaseHealthCheck    = "HealthCheck"
 	updatePhaseRollingBack    = "RollingBack"
@@ -210,6 +212,7 @@ func (r *OpenClawInstanceReconciler) reconcileAutoUpdate(ctx context.Context, in
 
 	instance.Status.AutoUpdate.PendingVersion = version
 	instance.Status.AutoUpdate.UpdatePhase = ""
+	instance.Status.AutoUpdate.BackupStartedAt = nil
 	instance.Status.AutoUpdate.LastUpdateError = ""
 
 	return ctrl.Result{Requeue: true}, nil
@@ -233,6 +236,12 @@ func (r *OpenClawInstanceReconciler) reconcileAutoUpdate(ctx context.Context, in
 func (r *OpenClawInstanceReconciler) driveUpdateStateMachine(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	pendingVersion := instance.Status.AutoUpdate.PendingVersion
+
+	// Resume cleanup after errors or controller restarts before allowing any
+	// resource reconciliation to restart the gateway against an active backup.
+	if instance.Status.AutoUpdate.UpdatePhase == updatePhaseAbortingBackup {
+		return r.abortPreUpdateBackup(ctx, instance, instance.Status.AutoUpdate.LastUpdateError)
+	}
 
 	// Handle in-progress health check
 	if instance.Status.AutoUpdate.UpdatePhase == updatePhaseHealthCheck {
@@ -262,7 +271,7 @@ func (r *OpenClawInstanceReconciler) driveUpdateStateMachine(ctx context.Context
 		case "", updatePhaseBackingUp:
 			result, done, err := r.drivePreUpdateBackup(ctx, instance)
 			if err != nil {
-				return r.abortUpdate(ctx, instance, fmt.Sprintf("backup failed: %v", err))
+				return r.abortPreUpdateBackup(ctx, instance, fmt.Sprintf("backup failed: %v", err))
 			}
 			if !done {
 				// Still in progress
@@ -273,7 +282,8 @@ func (r *OpenClawInstanceReconciler) driveUpdateStateMachine(ctx context.Context
 				return result, nil
 			}
 			// Backup complete — save the backup path for potential rollback restore
-			instance.Status.AutoUpdate.PreUpdateBackupPath = r.lastPreUpdateBackupPath(instance)
+			instance.Status.AutoUpdate.PreUpdateBackupPath = r.lastPreUpdateBackupPath(ctx, instance)
+			instance.Status.AutoUpdate.BackupStartedAt = nil
 		}
 	}
 
@@ -568,7 +578,7 @@ func (r *OpenClawInstanceReconciler) driveRollbackRestore(ctx context.Context, i
 		pvcName := pvcNameForInstance(instance)
 		labels := backupLabels(instance, "rollback-restore")
 
-		job := buildRcloneJob(jobName, instance.Namespace, pvcName, backupPath, labels, creds, false, instance.Spec.Availability.NodeSelector, instance.Spec.Availability.Tolerations, instance.Spec.Backup.ServiceAccountName, mirrorSecretName(instance))
+		job := buildRcloneJob(jobName, instance.Namespace, pvcName, backupPath, labels, creds, false, instance.Spec.Availability.NodeSelector, instance.Spec.Availability.Tolerations, instance.Spec.Backup.ServiceAccountName, mirrorSecretName(instance), &instance.Spec.Backup)
 		if err := controllerutil.SetControllerReference(instance, job, r.Scheme); err != nil {
 			return ctrl.Result{}, false, err
 		}
@@ -608,28 +618,22 @@ func rollbackRestoreJobName(instance *openclawv1alpha1.OpenClawInstance) string 
 	return instance.Name + "-rollback-restore"
 }
 
-// lastPreUpdateBackupPath extracts the S3 path from the pre-update backup Job.
-// This is called right after the backup completes so the job should exist.
-func (r *OpenClawInstanceReconciler) lastPreUpdateBackupPath(instance *openclawv1alpha1.OpenClawInstance) string {
-	jobName := preUpdateBackupJobName(instance)
-	job, err := r.getJob(context.TODO(), jobName, instance.Namespace)
+// lastPreUpdateBackupPath extracts the completed backup destination for rollback.
+func (r *OpenClawInstanceReconciler) lastPreUpdateBackupPath(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance) string {
+	job, err := r.getJob(ctx, preUpdateBackupJobName(instance), instance.Namespace)
 	if err != nil || job == nil {
 		return ""
 	}
-	// Extract the S3 path from the rclone args (the second arg after "sync")
+	creds, err := r.getS3Credentials(ctx)
+	if err != nil {
+		return ""
+	}
+	prefix := fmt.Sprintf(":s3:%s/", creds.Bucket)
 	for i := range job.Spec.Template.Spec.Containers {
 		c := &job.Spec.Template.Spec.Containers[i]
-		if c.Name == "rclone" && len(c.Args) >= 2 {
-			// Args[1] is the remote path for backup (":s3:bucket/path")
-			remotePath := c.Args[1]
-			// Strip the ":s3:bucket/" prefix to get the S3 path
-			creds, credErr := r.getS3Credentials(context.TODO())
-			if credErr == nil {
-				prefix := fmt.Sprintf(":s3:%s/", creds.Bucket)
-				if len(remotePath) > len(prefix) {
-					return remotePath[len(prefix):]
-				}
-			}
+		// Backup args are sync, /data/, destination, flags.
+		if c.Name == "rclone" && len(c.Args) >= 3 && strings.HasPrefix(c.Args[2], prefix) {
+			return strings.TrimPrefix(c.Args[2], prefix)
 		}
 	}
 	return ""
@@ -657,6 +661,57 @@ func parseHealthCheckTimeout(s string) time.Duration {
 // Returns (result, done, err) where done=true means backup completed successfully.
 func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance) (requeueResult ctrl.Result, done bool, retErr error) {
 	logger := log.FromContext(ctx)
+
+	// Persist the start before scaling down so pod termination and scheduling
+	// count toward the budget, and a controller restart cannot reset it.
+	jobName := preUpdateBackupJobName(instance)
+	existingJob, err := r.getJob(ctx, jobName, instance.Namespace)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, false, err
+	}
+	if instance.Status.AutoUpdate.BackupStartedAt == nil {
+		started := metav1.NewTime(time.Now().Truncate(time.Second))
+		// Adopt an in-flight Job from an older operator without granting it a
+		// fresh timeout. A new update instead retires any prior attempt below.
+		if instance.Status.AutoUpdate.UpdatePhase == updatePhaseBackingUp && existingJob != nil && !existingJob.CreationTimestamp.IsZero() {
+			started = existingJob.CreationTimestamp
+		}
+		instance.Status.AutoUpdate.BackupStartedAt = &started
+		if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
+			return ctrl.Result{}, false, statusErr
+		}
+		return ctrl.Result{Requeue: true}, false, nil
+	}
+	started := instance.Status.AutoUpdate.BackupStartedAt.Time
+	timeout := parseBackupTimeout(instance.Spec.AutoUpdate.BackupTimeout)
+	remaining := timeout - time.Since(started)
+	if existingJob != nil && existingJob.CreationTimestamp.Time.Before(started) {
+		// Jobs have a deterministic name and may outlive a successful update.
+		// Never reuse an earlier update's snapshot or failed Job.
+		stopped, stopErr := r.stopPreUpdateBackup(ctx, instance)
+		if stopErr != nil {
+			return ctrl.Result{}, false, stopErr
+		}
+		if !stopped {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, false, nil
+		}
+		existingJob = nil
+	}
+	if existingJob != nil {
+		finished, condition := isJobFinished(existingJob)
+		if finished && condition == batchv1.JobComplete {
+			// A completed Job may be observed after the deadline on a delayed
+			// reconcile. Its Kubernetes deadline already bounded execution.
+			r.Recorder.Event(instance, corev1.EventTypeNormal, "PreUpdateBackupComplete", "Pre-update backup completed successfully")
+			return ctrl.Result{}, true, nil
+		}
+		if finished && condition == batchv1.JobFailed {
+			return ctrl.Result{}, false, fmt.Errorf("pre-update backup job %s failed", jobName)
+		}
+	}
+	if remaining <= 0 {
+		return ctrl.Result{}, false, fmt.Errorf("pre-update backup timed out after %s", timeout)
+	}
 
 	// Scale down StatefulSet
 	sts := &appsv1.StatefulSet{}
@@ -705,13 +760,7 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 	}
 
 	// Create or check backup job
-	jobName := preUpdateBackupJobName(instance)
-	existingJob, err := r.getJob(ctx, jobName, instance.Namespace)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, false, err
-	}
-
-	if apierrors.IsNotFound(err) || existingJob == nil {
+	if existingJob == nil {
 		// Create the backup job
 		tenantID := getTenantID(instance)
 		timestamp := time.Now().UTC().Format("2006-01-02T150405Z")
@@ -719,7 +768,10 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 		pvcName := pvcNameForInstance(instance)
 		labels := backupLabels(instance, "pre-update-backup")
 
-		job := buildRcloneJob(jobName, instance.Namespace, pvcName, b2Path, labels, creds, true, instance.Spec.Availability.NodeSelector, instance.Spec.Availability.Tolerations, instance.Spec.Backup.ServiceAccountName, mirrorSecretName(instance))
+		job := buildRcloneJob(jobName, instance.Namespace, pvcName, b2Path, labels, creds, true, instance.Spec.Availability.NodeSelector, instance.Spec.Availability.Tolerations, instance.Spec.Backup.ServiceAccountName, mirrorSecretName(instance), &instance.Spec.Backup)
+		// Bound retries and stuck transfers even while the operator is down.
+		deadline := max(int64(1), int64(remaining.Seconds()))
+		job.Spec.ActiveDeadlineSeconds = &deadline
 		if err := controllerutil.SetControllerReference(instance, job, r.Scheme); err != nil {
 			return ctrl.Result{}, false, err
 		}
@@ -736,23 +788,46 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, false, nil
 	}
 
-	// Job exists — check status
-	finished, condType := isJobFinished(existingJob)
-	if !finished {
-		logger.Info("Pre-update backup job still running", "job", jobName)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, false, nil
+	logger.Info("Pre-update backup job still running", "job", jobName)
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, false, nil
+}
+
+// stopPreUpdateBackup waits for foreground deletion, then checks Pods as well.
+// The gateway must not restart while rclone still holds/reads the PVC.
+func (r *OpenClawInstanceReconciler) stopPreUpdateBackup(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance) (bool, error) {
+	job, err := r.getJob(ctx, preUpdateBackupJobName(instance), instance.Namespace)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return false, err
 	}
-
-	if condType == batchv1.JobFailed {
-		return ctrl.Result{}, false, fmt.Errorf("pre-update backup job %s failed", jobName)
+	if job != nil {
+		if job.DeletionTimestamp.IsZero() {
+			if deleteErr := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
+				return false, deleteErr
+			}
+		}
+		return false, nil
 	}
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(instance.Namespace), client.MatchingLabels(backupLabels(instance, "pre-update-backup"))); err != nil {
+		return false, err
+	}
+	return len(pods.Items) == 0, nil
+}
 
-	// Backup succeeded
-	logger.Info("Pre-update backup completed successfully", "job", jobName)
-	r.Recorder.Event(instance, corev1.EventTypeNormal, "PreUpdateBackupComplete",
-		"Pre-update backup completed successfully")
-
-	return ctrl.Result{}, true, nil
+func (r *OpenClawInstanceReconciler) abortPreUpdateBackup(ctx context.Context, instance *openclawv1alpha1.OpenClawInstance, reason string) (ctrl.Result, error) {
+	retry := ctrl.Result{RequeueAfter: 5 * time.Second}
+	if instance.Status.AutoUpdate.UpdatePhase != updatePhaseAbortingBackup {
+		instance.Status.AutoUpdate.UpdatePhase = updatePhaseAbortingBackup
+		instance.Status.AutoUpdate.LastUpdateError = reason
+		if err := r.Status().Update(ctx, instance); err != nil {
+			return retry, err
+		}
+	}
+	stopped, err := r.stopPreUpdateBackup(ctx, instance)
+	if err != nil || !stopped {
+		return retry, err
+	}
+	return r.abortUpdate(ctx, instance, reason)
 }
 
 // abortUpdate clears the update state and returns to Running phase.
@@ -760,32 +835,36 @@ func (r *OpenClawInstanceReconciler) abortUpdate(ctx context.Context, instance *
 	logger := log.FromContext(ctx)
 	logger.Error(nil, "Aborting auto-update", "reason", reason)
 
-	instance.Status.AutoUpdate.PendingVersion = ""
-	instance.Status.AutoUpdate.UpdatePhase = ""
-	instance.Status.AutoUpdate.LastUpdateError = reason
-	instance.Status.Phase = openclawv1alpha1.PhaseRunning
-
-	meta.RemoveStatusCondition(&instance.Status.Conditions, openclawv1alpha1.ConditionTypeAutoUpdateAvailable)
-
-	r.Recorder.Event(instance, corev1.EventTypeWarning, "AutoUpdateAborted", reason)
-
-	if err := r.Status().Update(ctx, instance); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Scale StatefulSet back up (if it was scaled down)
+	// Keep the update pending until scale-up succeeds, so transient API errors
+	// are retried through the same cleanup path.
 	sts := &appsv1.StatefulSet{}
 	stsKey := client.ObjectKey{Name: resources.StatefulSetName(instance), Namespace: instance.Namespace}
-	if err := r.Get(ctx, stsKey, sts); err == nil {
-		if sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0 {
-			one := int32(1)
-			original := sts.DeepCopy()
-			sts.Spec.Replicas = &one
-			if patchErr := r.Patch(ctx, sts, client.MergeFrom(original)); patchErr != nil {
-				logger.Error(patchErr, "Failed to scale StatefulSet back up after aborted update")
-			}
+	if err := r.Get(ctx, stsKey, sts); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+		}
+	} else if sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0 {
+		original := sts.DeepCopy()
+		sts.Spec.Replicas = resources.Ptr(int32(1))
+		if err := r.Patch(ctx, sts, client.MergeFrom(original)); err != nil {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 		}
 	}
+	instance.Status.AutoUpdate.PendingVersion = ""
+	instance.Status.AutoUpdate.UpdatePhase = ""
+	instance.Status.AutoUpdate.BackupStartedAt = nil
+	instance.Status.AutoUpdate.PreUpdateBackupPath = ""
+	instance.Status.AutoUpdate.LastUpdateError = reason
+	// A long backup may have consumed the check interval. Avoid immediately
+	// taking the instance down again to retry the same backup.
+	now := metav1.Now()
+	instance.Status.AutoUpdate.LastCheckTime = &now
+	instance.Status.Phase = openclawv1alpha1.PhaseRunning
+	meta.RemoveStatusCondition(&instance.Status.Conditions, openclawv1alpha1.ConditionTypeAutoUpdateAvailable)
+	if err := r.Status().Update(ctx, instance); err != nil {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+	}
+	r.Recorder.Event(instance, corev1.EventTypeWarning, "AutoUpdateAborted", reason)
 
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }

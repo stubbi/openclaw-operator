@@ -790,6 +790,36 @@ type PersistenceSpec struct {
 
 // BackupSpec configures periodic scheduled backups to S3-compatible storage.
 type BackupSpec struct {
+	// Excludes contains rclone glob patterns relative to the data volume root.
+	// Applies to pre-update, pre-delete, and periodic backups, not restores.
+	// Excluded data is not available for rollback or disaster recovery. No paths
+	// are excluded by default. Example: ["/tmp/plugin-captures/**", "/npm/**"].
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=1024
+	// +optional
+	Excludes []string `json:"excludes,omitempty"`
+
+	// Transfers is the number of parallel file transfers for backup uploads and
+	// periodic snapshot copies. Higher values use more memory and connections.
+	// +kubebuilder:default=8
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=256
+	// +optional
+	Transfers *int32 `json:"transfers,omitempty"`
+
+	// Checkers is the number of parallel file checks for backups.
+	// +kubebuilder:default=16
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=256
+	// +optional
+	Checkers *int32 `json:"checkers,omitempty"`
+
+	// FastList enables rclone --fast-list for backups, trading additional memory
+	// for fewer remote listing requests on supported storage backends.
+	// +optional
+	FastList bool `json:"fastList,omitempty"`
+
 	// Schedule is a cron expression for periodic backups (e.g., "0 2 * * *" for daily at 2 AM).
 	// When set, the operator creates a CronJob that runs rclone to sync PVC data to S3.
 	// Requires persistence to be enabled and the s3-backup-credentials Secret
@@ -1753,6 +1783,16 @@ type AutoUpdateSpec struct {
 	// +optional
 	BackupBeforeUpdate *bool `json:"backupBeforeUpdate,omitempty"`
 
+	// BackupTimeout bounds the entire pre-update backup phase, including scale-down,
+	// pod termination, Job scheduling, and transfer retries (Go duration, e.g. "30m").
+	// On timeout the backup Job is stopped, the update is aborted, and the old
+	// version is restarted. Cleanup and pod startup can take additional time.
+	// Minimum: 5m, Maximum: 24h, Default: 30m. Invalid values use the default;
+	// durations outside the bounds are clamped. Retries wait for CheckInterval.
+	// +kubebuilder:default="30m"
+	// +optional
+	BackupTimeout string `json:"backupTimeout,omitempty"`
+
 	// RollbackOnFailure automatically reverts to the previous version if the
 	// updated pod fails to become ready within HealthCheckTimeout
 	// +kubebuilder:default=true
@@ -1872,9 +1912,14 @@ type AutoUpdateStatus struct {
 	PendingVersion string `json:"pendingVersion,omitempty"`
 
 	// UpdatePhase tracks progress of an in-flight update
-	// +kubebuilder:validation:Enum="";BackingUp;ApplyingUpdate;HealthCheck;RollingBack
+	// +kubebuilder:validation:Enum="";BackingUp;AbortingBackup;ApplyingUpdate;HealthCheck;RollingBack
 	// +optional
 	UpdatePhase string `json:"updatePhase,omitempty"`
+
+	// BackupStartedAt records the start of pre-update backup preparation so the
+	// deadline survives controller restarts, including time before Job creation.
+	// +optional
+	BackupStartedAt *metav1.Time `json:"backupStartedAt,omitempty"`
 
 	// LastUpdateTime is when the last successful update was applied
 	// +optional

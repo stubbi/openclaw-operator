@@ -61,6 +61,16 @@ spec:
                     description: BackupBeforeUpdate creates a backup before applying
                       updates
                     type: boolean
+                  backupTimeout:
+                    default: 30m
+                    description: |-
+                      BackupTimeout bounds the entire pre-update backup phase, including scale-down,
+                      pod termination, Job scheduling, and transfer retries (Go duration, e.g. "30m").
+                      On timeout the backup Job is stopped, the update is aborted, and the old
+                      version is restarted. Cleanup and pod startup can take additional time.
+                      Minimum: 5m, Maximum: 24h, Default: 30m. Invalid values use the default;
+                      durations outside the bounds are clamped. Retries wait for CheckInterval.
+                    type: string
                   checkInterval:
                     default: 24h
                     description: |-
@@ -1303,6 +1313,26 @@ spec:
                   Backup configures periodic scheduled backups to S3-compatible storage.
                   Requires the s3-backup-credentials Secret in the operator namespace and persistence enabled.
                 properties:
+                  checkers:
+                    default: 16
+                    description: Checkers is the number of parallel file checks for
+                      backups.
+                    format: int32
+                    maximum: 256
+                    minimum: 1
+                    type: integer
+                  excludes:
+                    description: |-
+                      Excludes contains rclone glob patterns relative to the data volume root.
+                      Applies to pre-update, pre-delete, and periodic backups, not restores.
+                      Excluded data is not available for rollback or disaster recovery. No paths
+                      are excluded by default. Example: ["/tmp/plugin-captures/**", "/npm/**"].
+                    items:
+                      maxLength: 1024
+                      minLength: 1
+                      type: string
+                    maxItems: 100
+                    type: array
                   failedHistoryLimit:
                     default: 1
                     description: FailedHistoryLimit is the number of failed CronJob
@@ -1310,6 +1340,11 @@ spec:
                     format: int32
                     minimum: 0
                     type: integer
+                  fastList:
+                    description: |-
+                      FastList enables rclone --fast-list for backups, trading additional memory
+                      for fewer remote listing requests on supported storage backends.
+                    type: boolean
                   historyLimit:
                     default: 3
                     description: HistoryLimit is the number of successful CronJob
@@ -1352,6 +1387,15 @@ spec:
                       emits a BackupTimedOut event, and removes the finalizer so deletion can proceed.
                       Minimum: 5m, Maximum: 24h, Default: 30m.
                     type: string
+                  transfers:
+                    default: 8
+                    description: |-
+                      Transfers is the number of parallel file transfers for backup uploads and
+                      periodic snapshot copies. Higher values use more memory and connections.
+                    format: int32
+                    maximum: 256
+                    minimum: 1
+                    type: integer
                 type: object
               chromium:
                 description: Chromium enables the Chromium sidecar for browser automation
@@ -10298,6 +10342,12 @@ spec:
               autoUpdate:
                 description: AutoUpdate tracks the state of automatic version updates
                 properties:
+                  backupStartedAt:
+                    description: |-
+                      BackupStartedAt records the start of pre-update backup preparation so the
+                      deadline survives controller restarts, including time before Job creation.
+                    format: date-time
+                    type: string
                   currentVersion:
                     description: CurrentVersion is the version currently running
                     type: string
@@ -10346,6 +10396,7 @@ spec:
                     enum:
                     - ""
                     - BackingUp
+                    - AbortingBackup
                     - ApplyingUpdate
                     - HealthCheck
                     - RollingBack

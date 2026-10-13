@@ -44,7 +44,7 @@ stringData:
 | **Pre-update backup** | Runs before each auto-update when `spec.autoUpdate.backupBeforeUpdate: true` (the default). |
 | **Periodic (scheduled)** | Runs on a cron schedule when `spec.backup.schedule` is set. See [Periodic / scheduled backups](#periodic-scheduled-backups) below. |
 
-If the `s3-backup-credentials` Secret does not exist, pre-delete and pre-update backups are silently skipped (deletion and updates proceed normally), and the periodic backup CronJob is not created (a `ScheduledBackupReady=False` condition is set with reason `S3CredentialsMissing`).
+If the `s3-backup-credentials` Secret does not exist, pre-delete backups are skipped and deletion proceeds. Auto-updates requiring a backup are aborted and the old version is restarted. The periodic backup CronJob is not created (a `ScheduledBackupReady=False` condition is set with reason `S3CredentialsMissing`).
 
 ## Backup path format
 
@@ -216,3 +216,11 @@ spec:
 When `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are omitted, the operator passes `--s3-env-auth=true` to rclone, which uses the provider's native credential chain. The `serviceAccountName` is set on all backup and restore Job pods so they inherit the cloud IAM role.
 
 Setting `S3_PROVIDER` to the correct value (e.g., `AWS`, `GCS`) enables provider-specific optimizations in rclone. When left unset, it defaults to `Other` which works with any S3-compatible backend using static credentials.
+
+## Pre-update backup deadline and transfer controls
+
+`spec.autoUpdate.backupTimeout` (default `30m`, clamped to `5m`-`24h`) covers scale-down, pod termination, scheduling, and backup execution/retries. Its start time is persisted in `status.autoUpdate.backupStartedAt`. Kubernetes also enforces the Job execution budget if the operator is unavailable. On timeout or failure, `status.autoUpdate.updatePhase` becomes `AbortingBackup` while the operator stops the Job and waits for its Pods. It then restores the old version, records `lastUpdateError`, and waits for `checkInterval` before retrying. Cleanup and application startup may extend beyond the backup budget. The pre-delete `spec.backup.timeout` setting is unchanged.
+
+To reduce the data transferred, configure `spec.backup.excludes` with [rclone glob patterns](https://rclone.org/filtering/) relative to the PVC root, for example `/tmp/plugin-captures/**`. The filters apply to pre-update, pre-delete, periodic uploads, and periodic snapshot copies. They do not filter restores or remove existing remote data. Excluded files are absent from new snapshots, so select only regenerable data.
+
+`spec.backup.transfers` and `spec.backup.checkers` tune concurrency (defaults `8` and `16`; allowed range `1`-`256`). `spec.backup.fastList: true` reduces listing requests on supported backends at the cost of memory. Defaults preserve the current transfer behavior. Each pre-update backup still uses a fresh timestamped destination for its rollback snapshot; incremental pre-update uploads are not implemented.
