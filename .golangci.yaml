@@ -1,76 +1,102 @@
+version: "2"
 run:
   timeout: 5m
-  go: "1.24"
-
 linters:
   enable:
     - bodyclose
+    - copyloopvar
     - dogsled
     - dupl
-    - errcheck
-    - copyloopvar
     - gocheckcompilerdirectives
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - goprintffuncname
     - gosec
-    - gosimple
-    - govet
-    - ineffassign
     - misspell
     - nakedret
     - noctx
     - nolintlint
     - revive
     - staticcheck
-    - stylecheck
-    - typecheck
     - unconvert
     - unparam
-    - unused
     - whitespace
-
-linters-settings:
-  dupl:
-    threshold: 200
-  goconst:
-    min-len: 5
-    min-occurrences: 4
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-  goimports:
-    local-prefixes: github.com/paperclipinc/openclaw-operator
-  govet:
-    enable:
-      - shadow
-  misspell:
-    locale: US
-  revive:
-    rules:
-      - name: unexported-return
-        disabled: true
-
-issues:
-  exclude-rules:
-    # Test files can have longer functions and duplication
-    - path: _test\.go
-      linters:
-        - dupl
-        - goconst
-        - gosec
-    # SA5011 false positive: staticcheck doesn't track t.Fatal() as a terminator
-    - path: _test\.go
-      text: "SA5011"
-      linters:
-        - staticcheck
-    # Generated files
-    - path: zz_generated
-      linters:
+  settings:
+    dupl:
+      threshold: 200
+    goconst:
+      min-len: 5
+      min-occurrences: 4
+      # v1 did not inspect strings inside composite literals.
+      exclude-types:
+        - Call
+        - CompositeLit
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    govet:
+      enable:
+        - shadow
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: unexported-return
+          disabled: true
+    staticcheck:
+      # Preserve the v1 staticcheck/gosimple/stylecheck checks, without QF suggestions.
+      checks:
         - all
+        - -ST1000
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF*
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Test files can have longer functions and duplication.
+      - linters:
+          - dupl
+          - goconst
+          - gosec
+        path: _test\.go
+      # v1 noctx only checked HTTP calls; retain existing test command helpers.
+      - linters:
+          - noctx
+        path: _test\.go
+        text: os/exec.Command must not be called
+      # SA5011 false positive: staticcheck does not track t.Fatal as a terminator.
+      - linters:
+          - staticcheck
+        path: _test\.go
+        text: SA5011
+    paths:
+      - zz_generated
+      - third_party$
+      - builtin$
+      - examples$
+issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/paperclipinc/openclaw-operator
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

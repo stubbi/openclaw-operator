@@ -12,6 +12,9 @@ on:
       - '.github/workflows/conformance.yaml'
   workflow_dispatch:
 
+env:
+  GO_VERSION: '1.27.3'
+
 jobs:
   negative:
     name: Negative (API server deny paths)
@@ -20,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version: '${{ env.GO_VERSION }}' }
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
@@ -37,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version: '${{ env.GO_VERSION }}' }
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
@@ -54,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version: '${{ env.GO_VERSION }}' }
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
@@ -71,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version: '${{ env.GO_VERSION }}' }
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
@@ -88,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: go.mod }
+        with: { go-version: '${{ env.GO_VERSION }}' }
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance

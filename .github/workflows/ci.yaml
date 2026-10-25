@@ -7,26 +7,36 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.27.3'
   REGISTRY: ghcr.io
 
 jobs:
   lint:
-    name: Lint
+    name: Lint (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - go-version: '1.25'
+            toolchain: Go 1.25 compatibility
+          - go-version: '1.27.3'
+            toolchain: Go 1.27.3
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ matrix.go-version }}
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64.5
-          install-mode: goinstall
+          version: v2.15.0
           args: --timeout=5m
+
+      - name: Verify lint policy
+        run: make test-lint-policy GOLANGCI_LINT="$(command -v golangci-lint)"
 
   reconcile-guard:
     name: Reconcile Guard
@@ -142,14 +152,22 @@ jobs:
           fi
 
   test:
-    name: Test
+    name: Test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - go-version: '1.25'
+            toolchain: Go 1.25 compatibility
+          - go-version: '1.27.3'
+            toolchain: Go 1.27.3
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ matrix.go-version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -175,9 +193,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Run gosec
-        uses: securego/gosec@master
-        with:
-          args: -exclude-generated ./...
+        # Run on the selected Go toolchain instead of the action image's bundled Go.
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.30.0 -exclude-generated ./...
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
