@@ -20,7 +20,7 @@ spec:
             severity: warning
           annotations:
             summary: "OpenClaw instance {{ $labels.instance }} in {{ $labels.namespace }} has reconciliation errors."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawReconcileErrors"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawReconcileErrors"
 
         - alert: OpenClawInstanceDegraded
           expr: |
@@ -30,7 +30,7 @@ spec:
             severity: critical
           annotations:
             summary: "OpenClaw instance {{ $labels.instance }} in {{ $labels.namespace }} is in {{ $labels.phase }} phase."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawInstanceDegraded"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawInstanceDegraded"
 
         - alert: OpenClawSlowReconciliation
           expr: |
@@ -40,7 +40,7 @@ spec:
             severity: warning
           annotations:
             summary: "OpenClaw instance {{ $labels.instance }} p99 reconciliation duration exceeds 30s."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawSlowReconciliation"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawSlowReconciliation"
 
         - alert: OpenClawPodCrashLooping
           expr: |
@@ -50,7 +50,7 @@ spec:
             severity: critical
           annotations:
             summary: "OpenClaw pod {{ $labels.pod }} is crash-looping (>2 restarts in 10m)."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawPodCrashLooping"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawPodCrashLooping"
 
         - alert: OpenClawPodOOMKilled
           expr: |
@@ -60,7 +60,7 @@ spec:
             severity: warning
           annotations:
             summary: "OpenClaw pod {{ $labels.pod }} was OOM killed. Consider increasing memory limits."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawPodOOMKilled"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawPodOOMKilled"
 
         - alert: OpenClawPVCNearlyFull
           expr: |
@@ -70,7 +70,7 @@ spec:
             severity: warning
           annotations:
             summary: "PVC {{ $labels.persistentvolumeclaim }} is over 80% full."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawPVCNearlyFull"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawPVCNearlyFull"
 
         - alert: OpenClawAutoUpdateRollback
           expr: |
@@ -80,4 +80,4 @@ spec:
             severity: warning
           annotations:
             summary: "OpenClaw instance {{ $labels.instance }} auto-update rolled back in the last hour."
-            runbook_url: "https://paperclip.inc/docs/operators/openclaw/runbooks/OpenClawAutoUpdateRollback"
+            runbook_url: "https://stubbi.github.io/openclaw-operator/latest/runbooks/OpenClawAutoUpdateRollback"

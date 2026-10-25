@@ -15,13 +15,12 @@ keywords:
   - llm
   - automation
   - agent
-home: https://paperclip.inc
-icon: https://paperclip.inc/favicon.svg
+home: https://github.com/stubbi/openclaw-operator
+icon: https://raw.githubusercontent.com/stubbi/openclaw-operator/main/docs/images/icon.svg
 sources:
   - https://github.com/paperclipinc/openclaw-operator
 maintainers:
   - name: Jannes Stubbemann
-    email: jannes@paperclip.inc
     url: https://github.com/stubbi
 kubeVersion: '>=1.28.0-0'
 annotations:
@@ -31,10 +30,8 @@ annotations:
   artifacthub.io/operatorCapabilities: Auto Pilot
   artifacthub.io/prerelease: 'false'
   artifacthub.io/links: |
-    - name: Website
-      url: https://paperclip.inc
     - name: Documentation
-      url: https://paperclip.inc/docs/operators/openclaw
+      url: https://stubbi.github.io/openclaw-operator/
     - name: OperatorHub
       url: https://operatorhub.io/operator/openclaw-operator
     - name: Artifact Hub

@@ -1616,7 +1616,7 @@ type PrometheusRuleSpec struct {
 	Labels map[string]string `json:"labels,omitempty"`
 
 	// RunbookBaseURL is the base URL for alert runbook links
-	// +kubebuilder:default="https://paperclip.inc/docs/operators/openclaw/runbooks"
+	// +kubebuilder:default="https://stubbi.github.io/openclaw-operator/latest/runbooks"
 	// +optional
 	RunbookBaseURL string `json:"runbookBaseURL,omitempty"`
 }

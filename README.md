@@ -12,7 +12,7 @@
 
 **Self-host [OpenClaw](https://openclaw.ai) AI agents on Kubernetes with production-grade security, observability, and lifecycle management.**
 
-OpenClaw is an AI agent platform that acts on your behalf across Telegram, Discord, WhatsApp, and Signal. It manages your inbox, calendar, smart home, and more through 50+ integrations. While [Paperclip Inc.](https://paperclip.inc) offers fully managed hosting, this operator lets you run OpenClaw on your own infrastructure with the same operational rigor.
+OpenClaw is an AI agent platform that acts on your behalf across Telegram, Discord, WhatsApp, and Signal. It manages your inbox, calendar, smart home, and more through 50+ integrations. While Paperclip Inc. offers fully managed hosting, this operator lets you run OpenClaw on your own infrastructure with the same operational rigor.
 
 ---
 
@@ -1461,7 +1461,7 @@ spec:
         enabled: true
         labels:
           release: kube-prometheus-stack  # must match Prometheus ruleSelector
-        runbookBaseURL: https://paperclip.inc/docs/operators/openclaw/runbooks  # default
+        runbookBaseURL: https://stubbi.github.io/openclaw-operator/latest/runbooks  # default
 ```
 
 Alerts: `OpenClawReconcileErrors`, `OpenClawInstanceDegraded`, `OpenClawSlowReconciliation`, `OpenClawPodCrashLooping`, `OpenClawPodOOMKilled`, `OpenClawPVCNearlyFull`, `OpenClawAutoUpdateRollback`
@@ -1624,10 +1624,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide.
 - **v1.0.0**: API graduation to `v1`, conformance test suite, semver constraints for auto-update, HPA integration, cert-manager integration, multi-cluster support
 
 See the full [roadmap](ROADMAP.md) for details.
-
-## Don't Want to Self-Host?
-
-[Paperclip Inc.](https://paperclip.inc) offers fully managed hosting starting at **EUR 19/mo**. No Kubernetes cluster required. Setup, updates, and 24/7 uptime handled for you.
 
 ## Contributing
 
