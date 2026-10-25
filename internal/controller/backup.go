@@ -196,7 +196,7 @@ func (r *OpenClawInstanceReconciler) reconcileDeleteWithBackup(ctx context.Conte
 
 		pvcName := pvcNameForInstance(instance)
 		labels := backupLabels(instance, "backup")
-		job := buildRcloneJob(jobName, instance.Namespace, pvcName, b2Path, labels, creds, true, instance.Spec.Availability.NodeSelector, instance.Spec.Availability.Tolerations, instance.Spec.Backup.ServiceAccountName, mirrorSecretName(instance))
+		job := buildRcloneJob(jobName, instance.Namespace, pvcName, b2Path, labels, creds, true, instance.Spec.Availability.NodeSelector, instance.Spec.Availability.Tolerations, instance.Spec.Backup.ServiceAccountName, mirrorSecretName(instance), &instance.Spec.Backup)
 
 		// Set owner reference so the Job is cleaned up with the instance
 		if err := controllerutil.SetControllerReference(instance, job, r.Scheme); err != nil {

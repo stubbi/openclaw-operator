@@ -74,6 +74,7 @@ _Appears in:_
 | `enabled` _boolean_ | Enabled enables automatic version updates | false | Optional: \{\} <br /> |
 | `checkInterval` _string_ | CheckInterval is how often to check for new versions (Go duration, e.g. "24h")<br />Minimum: 1h, Maximum: 168h (7 days) | 24h | Optional: \{\} <br /> |
 | `backupBeforeUpdate` _boolean_ | BackupBeforeUpdate creates a backup before applying updates | true | Optional: \{\} <br /> |
+| `backupTimeout` _string_ | BackupTimeout bounds the entire pre-update backup phase, including scale-down,<br />pod termination, Job scheduling, and transfer retries (Go duration, e.g. "30m").<br />On timeout the backup Job is stopped, the update is aborted, and the old<br />version is restarted. Cleanup and pod startup can take additional time.<br />Minimum: 5m, Maximum: 24h, Default: 30m. Invalid values use the default;<br />durations outside the bounds are clamped. Retries wait for CheckInterval. | 30m | Optional: \{\} <br /> |
 | `rollbackOnFailure` _boolean_ | RollbackOnFailure automatically reverts to the previous version if the<br />updated pod fails to become ready within HealthCheckTimeout | true | Optional: \{\} <br /> |
 | `healthCheckTimeout` _string_ | HealthCheckTimeout is how long to wait for the updated pod to become ready<br />before triggering a rollback (Go duration, e.g. "10m")<br />Minimum: 2m, Maximum: 30m | 10m | Optional: \{\} <br /> |
 
@@ -113,6 +114,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `excludes` _string array_ | Excludes contains rclone glob patterns relative to the data volume root.<br />Applies to pre-update, pre-delete, and periodic backups, not restores.<br />Excluded data is not available for rollback or disaster recovery. No paths<br />are excluded by default. Example: ["/tmp/plugin-captures/**", "/npm/**"]. |  | MaxItems: 100 <br />items:MaxLength: 1024 <br />items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `transfers` _integer_ | Transfers is the number of parallel file transfers for backup uploads and<br />periodic snapshot copies. Higher values use more memory and connections. | 8 | Maximum: 256 <br />Minimum: 1 <br />Optional: \{\} <br /> |
+| `checkers` _integer_ | Checkers is the number of parallel file checks for backups. | 16 | Maximum: 256 <br />Minimum: 1 <br />Optional: \{\} <br /> |
+| `fastList` _boolean_ | FastList enables rclone --fast-list for backups, trading additional memory<br />for fewer remote listing requests on supported storage backends. |  | Optional: \{\} <br /> |
 | `schedule` _string_ | Schedule is a cron expression for periodic backups (e.g., "0 2 * * *" for daily at 2 AM).<br />When set, the operator creates a CronJob that runs rclone to sync PVC data to S3.<br />Requires persistence to be enabled and the s3-backup-credentials Secret<br />in the operator namespace. |  | Optional: \{\} <br /> |
 | `historyLimit` _integer_ | HistoryLimit is the number of successful CronJob runs to retain. | 3 | Minimum: 0 <br />Optional: \{\} <br /> |
 | `failedHistoryLimit` _integer_ | FailedHistoryLimit is the number of failed CronJob runs to retain. | 1 | Minimum: 0 <br />Optional: \{\} <br /> |
