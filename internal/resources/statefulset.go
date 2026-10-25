@@ -1599,8 +1599,9 @@ const MainTmpSubPath = "tmp"
 // with mode 1777 and the main container mounts it via subPath, which hides the
 // 2777 volume root from the main container's path ancestry.
 //
-// It runs as the pod UID with no capabilities, so it is admitted under the
-// "restricted" Pod Security Standard.
+// By default it runs as the non-root pod UID with no capabilities, so it is
+// admitted under the "restricted" Pod Security Standard. Explicit container
+// identity overrides follow the gateway's effective security context.
 func buildTmpDirInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev1.Container {
 	// chmod after mkdir: the setgid volume root and the umask both influence
 	// the mode mkdir produces, and a restart of the pod sandbox finds the
@@ -1609,7 +1610,8 @@ func buildTmpDirInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev
 
 	// Run as the gateway's effective UID so the directory belongs to the user
 	// that writes to it (and so it matches the other operator init containers;
-	// see #619). Falls back to the pod UID when no container UID is set.
+	// see #619). Falls back to the pod UID when no container UID is set. Carry
+	// the effective non-root requirement too, including explicit root opt-ins.
 	mainSC := buildContainerSecurityContext(instance)
 
 	return corev1.Container{
@@ -1624,7 +1626,7 @@ func buildTmpDirInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev
 			AllowPrivilegeEscalation: Ptr(false),
 			ReadOnlyRootFilesystem:   Ptr(true),
 			RunAsUser:                mainSC.RunAsUser,
-			RunAsNonRoot:             Ptr(true),
+			RunAsNonRoot:             mainSC.RunAsNonRoot,
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 			},

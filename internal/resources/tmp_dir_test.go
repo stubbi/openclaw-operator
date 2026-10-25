@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+
+	openclawv1alpha1 "github.com/paperclipinc/openclaw-operator/api/v1alpha1"
 )
 
 // OpenClaw >= 2026.9.6 refuses to create a temporary workspace below a
@@ -136,6 +138,70 @@ func TestBuildStatefulSet_TmpDirInitContainer(t *testing.T) {
 	}
 	if c.ImagePullPolicy != corev1.PullIfNotPresent {
 		t.Errorf("imagePullPolicy = %q, want IfNotPresent", c.ImagePullPolicy)
+	}
+}
+
+func TestBuildStatefulSet_TmpDirInitContainer_SecurityContext(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		podUID           *int64
+		podNonRoot       *bool
+		containerUID     *int64
+		containerNonRoot *bool
+		wantUID          int64
+		wantNonRoot      bool
+	}{
+		{name: "defaults", wantUID: 1000, wantNonRoot: true},
+		{name: "pod UID", podUID: Ptr(int64(1500)), wantUID: 1500, wantNonRoot: true},
+		{name: "container UID", podUID: Ptr(int64(1500)), containerUID: Ptr(int64(2000)), wantUID: 2000, wantNonRoot: true},
+		{name: "explicit root", containerUID: Ptr(int64(0)), containerNonRoot: Ptr(false), wantUID: 0, wantNonRoot: false},
+		{name: "root UID alone preserves non-root requirement", containerUID: Ptr(int64(0)), wantUID: 0, wantNonRoot: true},
+		{name: "inherit pod non-root setting", podNonRoot: Ptr(false), wantUID: 1000, wantNonRoot: false},
+		{name: "container non-root overrides pod", podNonRoot: Ptr(false), containerUID: Ptr(int64(2000)), containerNonRoot: Ptr(true), wantUID: 2000, wantNonRoot: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := newTestInstance("sticky-tmp-security")
+			instance.Spec.Security.PodSecurityContext = &openclawv1alpha1.PodSecurityContextSpec{
+				RunAsUser: tc.podUID, RunAsNonRoot: tc.podNonRoot,
+			}
+			instance.Spec.Security.ContainerSecurityContext = &openclawv1alpha1.ContainerSecurityContextSpec{
+				RunAsUser: tc.containerUID, RunAsNonRoot: tc.containerNonRoot,
+			}
+			sts := BuildStatefulSet(instance, "", nil, nil, nil)
+			_, c := findInitContainer(t, sts.Spec.Template.Spec.InitContainers, TmpDirInitContainerName)
+			sc := c.SecurityContext
+			if sc == nil {
+				t.Fatal("security context is nil")
+			}
+			uid := sc.RunAsUser
+			if uid == nil {
+				uid = sts.Spec.Template.Spec.SecurityContext.RunAsUser
+			}
+			if uid == nil {
+				t.Fatal("effective runAsUser is nil")
+			}
+			if *uid != tc.wantUID {
+				t.Errorf("effective runAsUser = %d, want %d", *uid, tc.wantUID)
+			}
+			if sc.RunAsNonRoot == nil {
+				t.Fatal("runAsNonRoot is nil")
+			}
+			if *sc.RunAsNonRoot != tc.wantNonRoot {
+				t.Errorf("runAsNonRoot = %t, want %t", *sc.RunAsNonRoot, tc.wantNonRoot)
+			}
+			if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
+				t.Error("allowPrivilegeEscalation should be false")
+			}
+			if sc.ReadOnlyRootFilesystem == nil || !*sc.ReadOnlyRootFilesystem {
+				t.Error("readOnlyRootFilesystem should be true")
+			}
+			if sc.Capabilities == nil || len(sc.Capabilities.Drop) != 1 || sc.Capabilities.Drop[0] != "ALL" || len(sc.Capabilities.Add) != 0 {
+				t.Errorf("capabilities = %+v, want drop ALL and no additions", sc.Capabilities)
+			}
+			if sc.SeccompProfile == nil || sc.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+				t.Error("seccomp profile should be RuntimeDefault")
+			}
+		})
 	}
 }
 

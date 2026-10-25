@@ -12921,7 +12921,8 @@ func TestBuildStatefulSet_PodLevelRunAsNonRootFalse_Propagation(t *testing.T) {
 
 func TestBuildStatefulSet_ContainerLevelRunAsNonRootOverride(t *testing.T) {
 	// When containerSecurityContext.runAsNonRoot is explicitly set to false
-	// but pod-level is default (true), only the main container should change.
+	// but pod-level is default (true), the main container and its /tmp helper
+	// should follow the override.
 	instance := newTestInstance("container-nonroot-false")
 	instance.Spec.Security.ContainerSecurityContext = &openclawv1alpha1.ContainerSecurityContextSpec{
 		RunAsNonRoot: Ptr(false),
@@ -12939,8 +12940,15 @@ func TestBuildStatefulSet_ContainerLevelRunAsNonRootOverride(t *testing.T) {
 		t.Error("main container: runAsNonRoot should be false (container-level override)")
 	}
 
-	// Init containers should still be true (they use pod-level, not container-level)
+	// The /tmp helper follows the gateway; other init containers still use
+	// the pod-level setting when there is no container UID override.
 	for _, ic := range initContainers {
+		if ic.Name == TmpDirInitContainerName {
+			if ic.SecurityContext == nil || ic.SecurityContext.RunAsNonRoot == nil || *ic.SecurityContext.RunAsNonRoot {
+				t.Error("init-tmp-dir: runAsNonRoot should be false (container-level override)")
+			}
+			continue
+		}
 		if ic.SecurityContext == nil || ic.SecurityContext.RunAsNonRoot == nil {
 			continue
 		}
