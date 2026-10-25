@@ -206,7 +206,7 @@ spec:
     - Kubernetes 1.28+
 
     For full documentation, visit the
-    [OpenClaw Operator docs](https://paperclip.inc/docs/operators/openclaw).
+    [OpenClaw Operator docs](https://stubbi.github.io/openclaw-operator/).
   maturity: alpha
   version: 0.9.0
   minKubeVersion: 1.28.0
@@ -224,15 +224,13 @@ spec:
     - machine-learning
   maintainers:
     - name: Jannes Stubbemann
-      email: jannes@paperclip.inc
+      email: 24454679+stubbi@users.noreply.github.com
   provider:
     name: Paperclip Inc.
-    url: https://paperclip.inc
+    url: https://github.com/stubbi/openclaw-operator
   links:
-    - name: Website
-      url: https://paperclip.inc
     - name: Operator Documentation
-      url: https://paperclip.inc/docs/operators/openclaw
+      url: https://stubbi.github.io/openclaw-operator/
     - name: API Reference
       url: https://github.com/paperclipinc/openclaw-operator/blob/main/docs/api-reference.md
     - name: GitHub Repository

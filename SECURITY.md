@@ -15,8 +15,7 @@ If you discover a security vulnerability in the OpenClaw Kubernetes Operator, pl
 
 ### How to Report
 
-1. Email: Send a detailed report to **security@paperclip.inc**
-2. GitHub: Use [GitHub's private vulnerability reporting](https://github.com/paperclipinc/openclaw-operator/security/advisories/new)
+Use [GitHub private vulnerability reporting](https://github.com/stubbi/openclaw-operator/security/advisories/new) to send a detailed report.
 
 ### What to Include
 

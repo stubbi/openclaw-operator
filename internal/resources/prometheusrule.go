@@ -26,7 +26,15 @@ import (
 	openclawv1alpha1 "github.com/paperclipinc/openclaw-operator/api/v1alpha1"
 )
 
-const defaultRunbookBaseURL = "https://paperclip.inc/docs/operators/openclaw/runbooks"
+const defaultRunbookBaseURL = "https://stubbi.github.io/openclaw-operator/latest/runbooks"
+
+// legacyDefaultRunbookBaseURLs are former CRD defaults. The API server persists
+// a CRD default into the stored spec, so instances created before the default
+// changed still carry the old value; treat it as "unset" so their alerts link
+// to the current runbooks.
+var legacyDefaultRunbookBaseURLs = map[string]bool{
+	"https://paperclip.inc/docs/operators/openclaw/runbooks": true,
+}
 
 // PrometheusRuleGVK returns the GroupVersionKind for PrometheusRule
 func PrometheusRuleGVK() schema.GroupVersionKind {
@@ -59,7 +67,8 @@ func BuildPrometheusRule(instance *openclawv1alpha1.OpenClawInstance) *unstructu
 
 	runbookBase := defaultRunbookBaseURL
 	if instance.Spec.Observability.Metrics.PrometheusRule != nil &&
-		instance.Spec.Observability.Metrics.PrometheusRule.RunbookBaseURL != "" {
+		instance.Spec.Observability.Metrics.PrometheusRule.RunbookBaseURL != "" &&
+		!legacyDefaultRunbookBaseURLs[instance.Spec.Observability.Metrics.PrometheusRule.RunbookBaseURL] {
 		runbookBase = instance.Spec.Observability.Metrics.PrometheusRule.RunbookBaseURL
 	}
 

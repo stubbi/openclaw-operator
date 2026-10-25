@@ -1,5 +1,5 @@
 site_name: OpenClaw Operator
-site_url: https://paperclip.inc/docs/operators/openclaw/
+site_url: https://stubbi.github.io/openclaw-operator/
 site_description: Kubernetes operator for managing OpenClaw AI agent instances with production-grade security, observability, and lifecycle management.
 site_author: Paperclip Inc.
 repo_url: https://github.com/paperclipinc/openclaw-operator
@@ -101,11 +101,6 @@ extra:
   version:
     provider: mike
     default: latest
-  analytics:
-    provider: custom
-  analytics_keys:
-    ahrefs: !ENV [AHREFS_KEY, '']
-    posthog: !ENV [POSTHOG_KEY, '']
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/paperclipinc/openclaw-operator
