@@ -19,6 +19,8 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,8 +37,8 @@ import (
 
 // NetBird mesh provider (#560). The sidecar cannot actually enroll without a
 // real control plane and setup key, so what is verified here is the rendered
-// topology: the right sidecar, the right security posture, the right egress, and
-// no Kubernetes API access.
+// topology (the right sidecar, the right security posture, the right egress, and
+// no Kubernetes API access) plus that the daemon starts under that posture.
 var _ = Describe("NetBird mesh provider", func() {
 	const (
 		timeout  = time.Second * 60
@@ -208,5 +210,34 @@ var _ = Describe("NetBird mesh provider", func() {
 			Namespace: namespace,
 		}, secret)
 		Expect(err).To(HaveOccurred(), "netbird keeps peer state on a volume, not in a Secret")
+	})
+
+	// #624: the image entrypoint starts "netbird service run" before
+	// "netbird up". Under the read-only root filesystem the daemon used to exit
+	// within seconds because its log file and CLI socket defaulted to
+	// /var/log/netbird and /var/run. This starts the real image and checks the
+	// daemon comes up. Enrollment itself still fails (the management URL is a
+	// closed loopback port and the setup key is fake), which is expected.
+	It("Should start the NetBird daemon under a read-only root filesystem", func() {
+		instance := newNetBirdInstance("netbird-startup")
+		instance.Spec.NetBird.ManagementURL = "https://127.0.0.1:443"
+		Expect(k8sClient.Create(ctx, instance)).Should(Succeed())
+		getStatefulSet(instance)
+
+		podName := resources.StatefulSetName(instance) + "-0"
+		var logs string
+		Eventually(func() string {
+			out, err := exec.Command("kubectl", "logs", "-n", namespace, podName, "-c", "netbird").CombinedOutput()
+			if err != nil {
+				return ""
+			}
+			logs = string(out)
+			return logs
+		}, 5*time.Minute, 5*time.Second).Should(ContainSubstring("started daemon server"),
+			"the NetBird daemon never reported startup")
+		for _, line := range strings.Split(logs, "\n") {
+			Expect(line).NotTo(ContainSubstring("read-only file system"),
+				"the sidecar must not touch the read-only root filesystem")
+		}
 	})
 })

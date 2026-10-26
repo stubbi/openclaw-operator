@@ -38,6 +38,25 @@ const (
 	// It lives on an emptyDir under /tmp so the root filesystem stays read-only.
 	NetBirdStateDir = "/tmp/netbird"
 
+	// NetBirdDaemonAddr is where the NetBird daemon serves its CLI socket. The
+	// image entrypoint starts "netbird service run" before "netbird up", and
+	// both default to unix:///var/run/netbird.sock, which cannot be created on
+	// a read-only root filesystem (#624).
+	NetBirdDaemonAddr = "unix://" + NetBirdStateDir + "/netbird.sock"
+
+	// NetBirdLogFile is the NB_LOG_FILE value for the sidecar. The default,
+	// "console,/var/log/netbird/client.log", fails on a read-only root
+	// filesystem (#624). A file is still needed: the entrypoint tails it for
+	// "started daemon server" before it runs "netbird up". The client rotates
+	// the file itself.
+	NetBirdLogFile = "console," + NetBirdStateDir + "/client.log"
+
+	// NetBirdUser is the USER value for the sidecar. The pod UID usually has
+	// no /etc/passwd entry in the image, and the NetBird CLI, built without
+	// cgo, cannot resolve the current user without $USER, so "netbird up"
+	// fails with "user: Current requires cgo or $USER set in environment".
+	NetBirdUser = "netbird"
+
 	// NetBirdManagementPort is the default port of a self-hosted NetBird
 	// management server, used for NetworkPolicy egress.
 	NetBirdManagementPort = 33073
@@ -101,6 +120,14 @@ func (netbirdProvider) SidecarContainers(instance *openclawv1alpha1.OpenClawInst
 		{Name: "NB_USE_NETSTACK_MODE", Value: "true"},
 		{Name: "NB_STATE_DIR", Value: NetBirdStateDir},
 		{Name: "NB_CONFIG", Value: NetBirdStateDir + "/config.json"},
+		// Keep the daemon socket and the log file on the writable state
+		// volume; their defaults live on the read-only root filesystem (#624).
+		{Name: "NB_DAEMON_ADDR", Value: NetBirdDaemonAddr},
+		{Name: "NB_LOG_FILE", Value: NetBirdLogFile},
+		{Name: "USER", Value: NetBirdUser},
+		// The pod UID has no passwd entry, so HOME would fall back to "/" and
+		// "netbird up" would try to mkdir /.config on the read-only root.
+		{Name: "HOME", Value: NetBirdStateDir},
 		{Name: "NB_HOSTNAME", Value: NetBirdHostname(instance)},
 		// The client is non-interactive in a pod; without this it would block
 		// waiting for a browser-based login instead of using the setup key.
@@ -132,6 +159,9 @@ func (netbirdProvider) SidecarContainers(instance *openclawv1alpha1.OpenClawInst
 		Image:           GetNetBirdImage(instance),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:             env,
+		// The daemon writes some files relative to its working directory
+		// (e.g. the updater's result.json); keep that on the writable volume.
+		WorkingDir: NetBirdStateDir,
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				// Peer identity and config. An emptyDir means the peer

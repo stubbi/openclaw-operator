@@ -18,6 +18,7 @@ package resources
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -178,6 +179,76 @@ func TestNetBirdSidecar_UsesUserspaceMode(t *testing.T) {
 	}
 	if c.SecurityContext.AllowPrivilegeEscalation == nil || *c.SecurityContext.AllowPrivilegeEscalation {
 		t.Error("expected privilege escalation to be disallowed")
+	}
+}
+
+// The NetBird image entrypoint runs "netbird service run" and then
+// "netbird up". With the root filesystem read-only, every path the client
+// writes must live on a mounted volume, or the daemon exits before it can
+// enroll (#624).
+func TestNetBirdSidecar_WritablePathsLiveOnMountedVolume(t *testing.T) {
+	instance := newNetBirdInstance("nb-paths")
+	c := netbirdProvider{}.SidecarContainers(instance)[0]
+	env := envMap(c.Env)
+
+	mounted := func(path string) bool {
+		for _, m := range c.VolumeMounts {
+			if m.ReadOnly {
+				continue
+			}
+			if path == m.MountPath || strings.HasPrefix(path, strings.TrimSuffix(m.MountPath, "/")+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Daemon socket: the default unix:///var/run/netbird.sock cannot be bound.
+	addr := env["NB_DAEMON_ADDR"]
+	if !strings.HasPrefix(addr, "unix://") {
+		t.Fatalf("NB_DAEMON_ADDR = %q, want a unix socket", addr)
+	}
+	if sock := strings.TrimPrefix(addr, "unix://"); !mounted(sock) {
+		t.Errorf("daemon socket %q is not on a writable volume", sock)
+	}
+
+	// Log file: the default /var/log/netbird/client.log cannot be created.
+	// The entrypoint needs a real file to detect daemon startup, so a
+	// console-only value is not enough.
+	var files []string
+	for _, f := range strings.Split(env["NB_LOG_FILE"], ",") {
+		if f != "console" && f != "syslog" && f != "" {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		t.Fatalf("NB_LOG_FILE = %q, want at least one log file", env["NB_LOG_FILE"])
+	}
+	for _, f := range files {
+		if !mounted(f) {
+			t.Errorf("log file %q is not on a writable volume", f)
+		}
+	}
+
+	for _, key := range []string{"NB_STATE_DIR", "NB_CONFIG"} {
+		if !mounted(env[key]) {
+			t.Errorf("%s = %q is not on a writable volume", key, env[key])
+		}
+	}
+
+	// "netbird up" resolves the current user; the pod UID has no passwd
+	// entry, so USER must be set.
+	if env["USER"] == "" {
+		t.Error("USER must be set for the NetBird CLI")
+	}
+
+	// With no passwd entry HOME would be "/", and "netbird up" would try to
+	// create /.config on the read-only root filesystem.
+	if !mounted(env["HOME"]) {
+		t.Errorf("HOME = %q is not on a writable volume", env["HOME"])
+	}
+	if !mounted(c.WorkingDir) {
+		t.Errorf("workingDir = %q is not on a writable volume", c.WorkingDir)
 	}
 }
 
