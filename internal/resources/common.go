@@ -52,6 +52,17 @@ const (
 	// canvas traffic. The Service targets this port instead of CanvasPort.
 	CanvasProxyPort = 18794
 
+	// McpAppsSandboxPort is the loopback port the operator assigns to the
+	// OpenClaw MCP Apps sandbox listener (mcp.apps.sandboxPort). OpenClaw's own
+	// default is "gateway port plus one" (18790), which is GatewayProxyPort and
+	// therefore already taken by the gateway proxy sidecar (#615).
+	McpAppsSandboxPort = 18795
+
+	// McpAppsSandboxProxyPort is the port the nginx reverse proxy listens on
+	// for MCP Apps sandbox traffic. The Service targets this port instead of
+	// McpAppsSandboxPort because the sandbox listener binds to loopback only.
+	McpAppsSandboxProxyPort = 18796
+
 	// DefaultGatewayProxyImageRepository is the default gateway proxy image repository.
 	DefaultGatewayProxyImageRepository = "docker.io/library/nginx"
 	// DefaultGatewayProxyImageTag is the default gateway proxy image tag.
@@ -387,9 +398,22 @@ func IsPersistenceEnabled(instance *openclawv1alpha1.OpenClawInstance) bool {
 }
 
 // IsDataOwnershipFixEnabled returns whether the init-data-owner init container
-// runs. Defaults to true; see StorageSpec.FixOwnership.
+// runs. Defaults to true; see StorageSpec.FixOwnership. The controller resolves
+// an unset value to false for namespaces that enforce the "restricted" Pod
+// Security Standard before the builders run.
 func IsDataOwnershipFixEnabled(instance *openclawv1alpha1.OpenClawInstance) bool {
 	return instance.Spec.Storage.FixOwnership == nil || *instance.Spec.Storage.FixOwnership
+}
+
+// PodSecurityEnforceLabel is the namespace label Pod Security Admission reads
+// to pick the Pod Security Standard it enforces.
+const PodSecurityEnforceLabel = "pod-security.kubernetes.io/enforce"
+
+// NamespaceEnforcesRestrictedPodSecurity reports whether a namespace with the
+// given labels rejects pods that violate the "restricted" Pod Security
+// Standard. Only the enforce mode matters: audit and warn never block a pod.
+func NamespaceEnforcesRestrictedPodSecurity(namespaceLabels map[string]string) bool {
+	return namespaceLabels[PodSecurityEnforceLabel] == "restricted"
 }
 
 // ChromiumPVCName returns the name of the Chromium browser profile PVC
