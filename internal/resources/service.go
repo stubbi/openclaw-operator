@@ -105,6 +105,21 @@ func buildServicePorts(instance *openclawv1alpha1.OpenClawInstance) []corev1.Ser
 		},
 	}
 
+	// MCP Apps sandbox listener (#615). Through the proxy sidecar when it is
+	// enabled, otherwise straight to the listener's effective port.
+	if sandbox := ResolveMcpAppsSandbox(instance); sandbox.Exposed {
+		mcpAppsTarget := int32(McpAppsSandboxProxyPort)
+		if !IsGatewayProxyEnabled(instance) {
+			mcpAppsTarget = sandbox.ListenPort
+		}
+		ports = append(ports, corev1.ServicePort{
+			Name:       "mcp-apps",
+			Port:       int32(McpAppsSandboxPort),
+			TargetPort: intstr.FromInt32(mcpAppsTarget),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+
 	if instance.Spec.Chromium.Enabled {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "chromium",
