@@ -1725,9 +1725,13 @@ echo "data volume root ownership changed: $have -> $want"`, uid, gid)
 // ownership is not applied (e.g. Rancher local-path-provisioner on Talos).
 // Every downstream container that mounts these paths via SubPath inherits the
 // correct ownership from the pre-created directory. See #448.
+//
+// It also makes credentials/ owner-only: fsGroup re-adds group rw on every
+// mount, and OpenClaw refuses a managed GitHub profile that is not owner-only.
 func buildUvInitContainer(instance *openclawv1alpha1.OpenClawInstance) corev1.Container {
 	script := `set -e
 mkdir -p /data/.local/bin /data/.cache /data/.config /data/skills
+[ ! -d /data/credentials ] || find /data/credentials -user "$(id -u)" ! -type l -exec chmod go-rwx {} +
 if [ -x /data/.local/bin/uv ]; then echo "uv already installed"; exit 0; fi
 cp /usr/local/bin/uv /data/.local/bin/uv
 echo "uv $(/data/.local/bin/uv --version) installed"`
