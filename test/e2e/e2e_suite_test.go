@@ -172,8 +172,9 @@ var _ = Describe("OpenClawInstance Controller", func() {
 				}, service)
 			}, timeout, interval).Should(Succeed())
 
-			// Verify the StatefulSet has main + gateway-proxy + otel-collector containers
-			Expect(statefulSet.Spec.Template.Spec.Containers).To(HaveLen(3))
+			// Verify the StatefulSet has main + gateway-proxy containers
+			// (otel-collector is a native sidecar in initContainers)
+			Expect(statefulSet.Spec.Template.Spec.Containers).To(HaveLen(2))
 			Expect(statefulSet.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/openclaw/openclaw:latest"))
 
 			// Verify handshake timeout env var is injected (workaround for upstream #46892)

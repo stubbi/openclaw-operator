@@ -315,10 +315,10 @@ func TestBuildStatefulSet_Defaults(t *testing.T) {
 		t.Error("pod security context: seccomp profile should be RuntimeDefault")
 	}
 
-	// Containers (main + gateway-proxy + otel-collector; metrics enabled by default)
+	// Containers (main + gateway-proxy; otel-collector is a native sidecar)
 	containers := sts.Spec.Template.Spec.Containers
-	if len(containers) != 3 {
-		t.Fatalf("expected 3 containers (main + gateway-proxy + otel-collector), got %d", len(containers))
+	if len(containers) != 2 {
+		t.Fatalf("expected 2 containers (main + gateway-proxy), got %d", len(containers))
 	}
 
 	main := containers[0]
@@ -446,8 +446,8 @@ func TestBuildStatefulSet_WithChromium(t *testing.T) {
 	containers := sts.Spec.Template.Spec.Containers
 	initContainers := sts.Spec.Template.Spec.InitContainers
 
-	if len(containers) != 3 {
-		t.Fatalf("expected 3 containers (main + gateway-proxy + otel-collector), got %d", len(containers))
+	if len(containers) != 2 {
+		t.Fatalf("expected 2 containers (main + gateway-proxy), got %d", len(containers))
 	}
 
 	// Find chromium in init containers (native sidecar)
@@ -879,8 +879,8 @@ func TestBuildStatefulSet_ConfigVolume_RawConfig(t *testing.T) {
 
 	// Init container should copy config from ConfigMap to data volume
 	initContainers := sts.Spec.Template.Spec.InitContainers
-	if len(initContainers) != 6 {
-		t.Fatalf("expected 6 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir), got %d", len(initContainers))
+	if len(initContainers) != 7 {
+		t.Fatalf("expected 7 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir + otel-collector), got %d", len(initContainers))
 	}
 	initC := initContainers[1]
 	if initC.Name != "init-config" {
@@ -924,8 +924,8 @@ func TestBuildStatefulSet_ConfigVolume_ConfigMapRef(t *testing.T) {
 	// The controller reads the external CM and writes enriched content into the
 	// operator-managed CM under "openclaw.json", so the init container always uses that key.
 	initContainers := sts.Spec.Template.Spec.InitContainers
-	if len(initContainers) != 6 {
-		t.Fatalf("expected 6 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir), got %d", len(initContainers))
+	if len(initContainers) != 7 {
+		t.Fatalf("expected 7 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir + otel-collector), got %d", len(initContainers))
 	}
 	initC := initContainers[1]
 	assertVolumeMount(t, initC.VolumeMounts, "data", "/data")
@@ -959,8 +959,8 @@ func TestBuildStatefulSet_ConfigMapRef_DefaultKey(t *testing.T) {
 
 	// Init container should use "openclaw.json" (operator-managed key)
 	initContainers := sts.Spec.Template.Spec.InitContainers
-	if len(initContainers) != 6 {
-		t.Fatalf("expected 6 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir), got %d", len(initContainers))
+	if len(initContainers) != 7 {
+		t.Fatalf("expected 7 init containers (init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir + otel-collector), got %d", len(initContainers))
 	}
 	expectedPrefix := "cp /config/'openclaw.json' /data/openclaw.json"
 	if !strings.HasPrefix(initContainers[1].Command[2], expectedPrefix) {
@@ -983,9 +983,9 @@ func TestBuildStatefulSet_VanillaDeployment_HasInitContainer(t *testing.T) {
 
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 
-	// Vanilla deployments get init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir
-	if len(sts.Spec.Template.Spec.InitContainers) != 6 {
-		t.Fatalf("expected 6 init containers for vanilla deployment, got %d", len(sts.Spec.Template.Spec.InitContainers))
+	// Vanilla deployments get init-data-owner + init-config + init-uv + init-pip + init-plugin-runtime-deps + init-tmp-dir + otel-collector
+	if len(sts.Spec.Template.Spec.InitContainers) != 7 {
+		t.Fatalf("expected 7 init containers for vanilla deployment, got %d", len(sts.Spec.Template.Spec.InitContainers))
 	}
 	if sts.Spec.Template.Spec.InitContainers[1].Name != "init-config" {
 		t.Errorf("init container name = %q, want %q", sts.Spec.Template.Spec.InitContainers[1].Name, "init-config")
@@ -2882,7 +2882,7 @@ func TestBuildStatefulSet_OTelCollectorContainer(t *testing.T) {
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 
 	var found bool
-	for _, c := range sts.Spec.Template.Spec.Containers {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
 		if c.Name != "otel-collector" {
 			continue
 		}
@@ -2970,9 +2970,9 @@ func TestBuildStatefulSet_OTelCollectorOverrides(t *testing.T) {
 
 			sts := BuildStatefulSet(instance, "", nil, nil, nil)
 			var collector *corev1.Container
-			for i := range sts.Spec.Template.Spec.Containers {
-				if sts.Spec.Template.Spec.Containers[i].Name == "otel-collector" {
-					collector = &sts.Spec.Template.Spec.Containers[i]
+			for i := range sts.Spec.Template.Spec.InitContainers {
+				if sts.Spec.Template.Spec.InitContainers[i].Name == "otel-collector" {
+					collector = &sts.Spec.Template.Spec.InitContainers[i]
 					break
 				}
 			}
@@ -2998,9 +2998,48 @@ func TestBuildStatefulSet_MetricsDisabled_NoOTelCollector(t *testing.T) {
 	instance.Spec.Observability.Metrics.Enabled = &disabled
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 
-	for _, c := range sts.Spec.Template.Spec.Containers {
+	podSpec := sts.Spec.Template.Spec
+	for _, c := range append(podSpec.InitContainers, podSpec.Containers...) {
 		if c.Name == "otel-collector" {
 			t.Error("otel-collector should not be present when metrics disabled")
+		}
+	}
+}
+
+// The collector must be a native sidecar so Kubernetes stops it only after
+// the gateway has exited and flushed its final metrics.
+func TestBuildStatefulSet_OTelCollectorNativeSidecar(t *testing.T) {
+	instance := newTestInstance("sts-otel-collector-native-sidecar")
+	instance.Spec.Ollama.Enabled = true
+	instance.Spec.Ollama.Models = []string{"llama3"}
+	sts := BuildStatefulSet(instance, "", nil, nil, nil)
+	podSpec := sts.Spec.Template.Spec
+
+	for _, c := range podSpec.Containers {
+		if c.Name == "otel-collector" {
+			t.Fatal("otel-collector should not be a regular container")
+		}
+	}
+
+	idx := -1
+	for i, c := range podSpec.InitContainers {
+		if c.Name == "otel-collector" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("otel-collector should be an init container when metrics enabled")
+	}
+	collector := podSpec.InitContainers[idx]
+	if collector.RestartPolicy == nil || *collector.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("otel-collector restartPolicy = %v, want Always", collector.RestartPolicy)
+	}
+
+	// Run-to-completion init containers must come before the collector.
+	for _, c := range podSpec.InitContainers[idx+1:] {
+		if c.RestartPolicy == nil || *c.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+			t.Errorf("init container %q runs after otel-collector, want it before", c.Name)
 		}
 	}
 }
@@ -8029,8 +8068,8 @@ func TestBuildStatefulSet_CustomInitContainers_AfterOperatorManaged(t *testing.T
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	initContainers := sts.Spec.Template.Spec.InitContainers
 
-	if len(initContainers) != 8 {
-		t.Fatalf("expected 8 init containers, got %d", len(initContainers))
+	if len(initContainers) != 9 {
+		t.Fatalf("expected 9 init containers, got %d", len(initContainers))
 	}
 	if initContainers[0].Name != "init-data-owner" {
 		t.Errorf("initContainers[0] = %q, want init-data-owner", initContainers[0].Name)
@@ -8053,8 +8092,11 @@ func TestBuildStatefulSet_CustomInitContainers_AfterOperatorManaged(t *testing.T
 	if initContainers[6].Name != "init-tmp-dir" {
 		t.Errorf("initContainers[6] = %q, want init-tmp-dir", initContainers[6].Name)
 	}
-	if initContainers[7].Name != "user-init" {
-		t.Errorf("initContainers[7] = %q, want user-init", initContainers[7].Name)
+	if initContainers[7].Name != "otel-collector" {
+		t.Errorf("initContainers[7] = %q, want otel-collector", initContainers[7].Name)
+	}
+	if initContainers[8].Name != "user-init" {
+		t.Errorf("initContainers[8] = %q, want user-init", initContainers[8].Name)
 	}
 }
 
@@ -8425,7 +8467,7 @@ func TestBuildStatefulSet_RuntimeDeps_InitContainerOrder(t *testing.T) {
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	initContainers := sts.Spec.Template.Spec.InitContainers
 
-	expected := []string{"init-data-owner", "init-config", "init-uv", "init-pip", "init-plugin-runtime-deps", "init-pnpm", "init-python", "init-skills", "init-tmp-dir", "user-init"}
+	expected := []string{"init-data-owner", "init-config", "init-uv", "init-pip", "init-plugin-runtime-deps", "init-pnpm", "init-python", "init-skills", "init-tmp-dir", "otel-collector", "user-init"}
 	if len(initContainers) != len(expected) {
 		t.Fatalf("expected %d init containers, got %d: %v", len(expected), len(initContainers),
 			func() []string {
@@ -9665,8 +9707,8 @@ func TestBuildStatefulSet_OllamaEnabled(t *testing.T) {
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	containers := sts.Spec.Template.Spec.Containers
 
-	if len(containers) != 4 {
-		t.Fatalf("expected 4 containers (main + gateway-proxy + ollama + otel-collector), got %d", len(containers))
+	if len(containers) != 3 {
+		t.Fatalf("expected 3 containers (main + gateway-proxy + ollama), got %d", len(containers))
 	}
 
 	var ollama *corev1.Container
@@ -10004,8 +10046,8 @@ func TestBuildStatefulSet_OllamaAndChromiumEnabled(t *testing.T) {
 	containers := sts.Spec.Template.Spec.Containers
 	initContainers := sts.Spec.Template.Spec.InitContainers
 
-	if len(containers) != 4 {
-		t.Fatalf("expected 4 containers (main + gateway-proxy + ollama + otel-collector), got %d", len(containers))
+	if len(containers) != 3 {
+		t.Fatalf("expected 3 containers (main + gateway-proxy + ollama), got %d", len(containers))
 	}
 
 	names := make(map[string]bool)
@@ -11205,7 +11247,7 @@ func TestBuildStatefulSet_MetricsPortEnabled(t *testing.T) {
 
 	// Find otel-collector and verify metrics port
 	found := false
-	for _, c := range sts.Spec.Template.Spec.Containers {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
 		if c.Name == "otel-collector" {
 			found = true
 			assertContainerPort(t, c.Ports, "metrics", DefaultMetricsPort)
@@ -11222,7 +11264,8 @@ func TestBuildStatefulSet_MetricsPortDisabled(t *testing.T) {
 
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 
-	for _, c := range sts.Spec.Template.Spec.Containers {
+	podSpec := sts.Spec.Template.Spec
+	for _, c := range append(podSpec.InitContainers, podSpec.Containers...) {
 		if c.Name == "otel-collector" {
 			t.Error("otel-collector should not be present when metrics is disabled")
 		}
@@ -11240,7 +11283,7 @@ func TestBuildStatefulSet_MetricsPortCustom(t *testing.T) {
 
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 
-	for _, c := range sts.Spec.Template.Spec.Containers {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
 		if c.Name == "otel-collector" {
 			assertContainerPort(t, c.Ports, "metrics", 8080)
 			return
@@ -11260,8 +11303,8 @@ func TestBuildStatefulSet_WebTerminalEnabled(t *testing.T) {
 	sts := BuildStatefulSet(instance, "", nil, nil, nil)
 	containers := sts.Spec.Template.Spec.Containers
 
-	if len(containers) != 4 {
-		t.Fatalf("expected 4 containers (main + gateway-proxy + web-terminal + otel-collector), got %d", len(containers))
+	if len(containers) != 3 {
+		t.Fatalf("expected 3 containers (main + gateway-proxy + web-terminal), got %d", len(containers))
 	}
 
 	var wt *corev1.Container
