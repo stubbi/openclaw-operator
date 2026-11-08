@@ -62,6 +62,15 @@ jobs:
       - name: Check chart image.repository uses the canonical namespace
         run: bash hack/check-chart-image-repository.sh
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check release catalog preparation
+        run: |
+          python -m pip install PyYAML==6.0.3
+          python hack/test_release_catalog.py
+
   helm-rbac-sync:
     name: Helm RBAC Sync
     runs-on: ubuntu-latest
