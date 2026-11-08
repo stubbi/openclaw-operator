@@ -18,9 +18,9 @@ jobs:
       actions: write
     env:
       # Credential precedence: GitHub App token > RELEASE_PLEASE_TOKEN PAT >
-      # GITHUB_TOKEN. Events created with GITHUB_TOKEN do not trigger other
-      # workflows, so with the fallback the release PR gets no CI run and the
-      # tag does not start release.yaml on its own (dispatched explicitly below).
+      # GITHUB_TOKEN. Tag pushes made with GITHUB_TOKEN do not start other
+      # workflows, so release.yaml is dispatched explicitly below. Release PR
+      # checks may require approval; verify exact-head checks before merging.
       HAS_APP: ${{ vars.RELEASE_BOT_APP_ID != '' }}
       HAS_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     steps:
@@ -37,7 +37,7 @@ jobs:
       - name: Warn about fallback credentials
         if: env.HAS_APP != 'true' && env.HAS_PAT != 'true'
         run: |
-          echo "::warning::Neither vars.RELEASE_BOT_APP_ID nor secrets.RELEASE_PLEASE_TOKEN is set; using GITHUB_TOKEN. The release PR will not get CI runs automatically (push an empty commit to it or close/reopen it), and release.yaml is dispatched explicitly after tagging."
+          echo "::warning::Neither vars.RELEASE_BOT_APP_ID nor secrets.RELEASE_PLEASE_TOKEN is set; using GITHUB_TOKEN. Release PR checks may require approval; verify checks for its exact head before merging. release.yaml is dispatched explicitly after tagging."
 
       - uses: googleapis/release-please-action@v4
         id: release
