@@ -99,6 +99,7 @@ rules:
   - delete
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - gateway.networking.k8s.io
