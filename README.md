@@ -1057,6 +1057,10 @@ spec:
 make the bootstrap image reference immutable. Cluster defaults can provide the
 same block, while an instance-level `uvImage` takes precedence.
 
+The uv bootstrap preserves existing binaries and gateway-side symlink pins.
+It replaces a symlink only when its target is known to be missing in the
+shared data volume.
+
 ### Custom init containers and sidecars
 
 Add custom init containers (run after operator-managed ones) and sidecar containers:
