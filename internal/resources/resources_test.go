@@ -5799,6 +5799,17 @@ func TestBuildStatefulSet_WritablePVCSubPaths(t *testing.T) {
 	}
 }
 
+// fsGroup re-adds group rw on every mount; OpenClaw rejects a managed GitHub
+// profile under credentials/ unless it is owner-only.
+func TestBuildStatefulSet_InitUvRestrictsCredentialModes(t *testing.T) {
+	sts := BuildStatefulSet(newTestInstance("init-uv-credentials"), "", nil, nil, nil)
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == "init-uv" && !strings.Contains(c.Command[2], `find /data/credentials -user "$(id -u)" ! -type l -exec chmod go-rwx {} +`) {
+			t.Errorf("init-uv must make credentials owner-only, got:\n%s", c.Command[2])
+		}
+	}
+}
+
 // TestBuildStatefulSet_InitUvPipMountFullDataVolume verifies that init-uv and
 // init-pip mount the data PVC in full (not via SubPath .local). This is
 // required so that on hostPath-backed storage (where fsGroup is not applied),
