@@ -67,6 +67,84 @@ func TestPreUpdateBackupExpiredJobRecoversInstance(t *testing.T) {
 	}
 }
 
+func TestPreUpdateBackupLegacyExecutionDeadline(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		deadline *int64
+		want     int64
+	}{
+		{"unbounded", nil, 300},
+		{"too long", resources.Ptr(int64(3600)), 300},
+		{"shorter existing bound", resources.Ptr(int64(60)), 60},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, instance, _, job := preUpdateFixture(t)
+			testCtx := context.Background()
+			started := metav1.NewTime(time.Now().Add(-2 * time.Minute).Truncate(time.Second))
+			job.CreationTimestamp = started
+			job.Spec.ActiveDeadlineSeconds = tc.deadline
+			if err := r.Update(testCtx, job); err != nil {
+				t.Fatal(err)
+			}
+			job.Status.StartTime = &started
+			if err := r.Status().Update(testCtx, job); err != nil {
+				t.Fatal(err)
+			}
+			instance.Spec.AutoUpdate.BackupTimeout = "5m"
+			if err := r.Update(testCtx, instance); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if _, _, err := r.drivePreUpdateBackup(testCtx, instance); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := r.Get(testCtx, client.ObjectKeyFromObject(job), job); err != nil {
+				t.Fatal(err)
+			}
+			if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != tc.want {
+				t.Fatalf("legacy Job is not bounded from its original start: got %v, want %d seconds", job.Spec.ActiveDeadlineSeconds, tc.want)
+			}
+		})
+	}
+}
+
+func TestPreUpdateBackupLegacyCompletionBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		finishedAfter time.Duration
+		wantDone      bool
+	}{
+		{"finished within budget, observed late", 10 * time.Minute, true},
+		{"finished after budget", 40 * time.Minute, false},
+		{"missing completion evidence", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, instance, _, job := preUpdateFixture(t)
+			testCtx := context.Background()
+			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+			if tc.finishedAfter != 0 {
+				finished := metav1.NewTime(job.CreationTimestamp.Add(tc.finishedAfter))
+				job.Status.CompletionTime = &finished
+			}
+			if err := r.Status().Update(testCtx, job); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := r.drivePreUpdateBackup(testCtx, instance); err != nil {
+				t.Fatal(err)
+			}
+			_, done, err := r.drivePreUpdateBackup(testCtx, instance)
+			if tc.wantDone {
+				if err != nil || !done {
+					t.Fatalf("timely completion must survive delayed observation: done=%t err=%v", done, err)
+				}
+			} else if done || err == nil {
+				t.Fatalf("late/unproven legacy completion authorized update: done=%t err=%v", done, err)
+			}
+		})
+	}
+}
+
 func preUpdateFixture(t *testing.T) (*OpenClawInstanceReconciler, *openclawv1alpha1.OpenClawInstance, *appsv1.StatefulSet, *batchv1.Job) {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -290,6 +368,8 @@ func TestPreUpdateBackupSuccessRecordsRollbackDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+	completed := metav1.NewTime(job.CreationTimestamp.Add(10 * time.Minute))
+	job.Status.CompletionTime = &completed
 	if err := r.Status().Update(testCtx, job); err != nil {
 		t.Fatal(err)
 	}

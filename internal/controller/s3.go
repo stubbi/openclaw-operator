@@ -347,10 +347,14 @@ func backupRcloneArgs(spec *openclawv1alpha1.BackupSpec) []string {
 func shellBackupRcloneArgs(spec *openclawv1alpha1.BackupSpec) string {
 	args := backupRcloneArgs(spec)
 	for i, arg := range args {
-		arg = strings.ReplaceAll(arg, "$", "$$")
-		args[i] = "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
+		args[i] = shellRcloneLiteral(arg)
 	}
 	return strings.Join(args, " ")
+}
+
+func shellRcloneLiteral(arg string) string {
+	arg = strings.ReplaceAll(arg, "$", "$$")
+	return "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
 }
 
 func int64Ptr(v int64) *int64 {
@@ -499,7 +503,7 @@ func buildBackupCronJob(
 
 	basePath := fmt.Sprintf("backups/%s/%s/periodic", tenantID, instance.Name)
 	remote := fmt.Sprintf(":s3:%s/%s", creds.Bucket, basePath)
-	s3Flags := fmt.Sprintf(`--s3-provider=%s --s3-endpoint="${S3_ENDPOINT}" %s`, creds.Provider, authFlags)
+	s3Flags := fmt.Sprintf(`%s --s3-endpoint="${S3_ENDPOINT}" %s`, shellRcloneLiteral("--s3-provider="+creds.Provider), authFlags)
 	if creds.Region != "" {
 		s3Flags += ` --s3-region="${S3_REGION}"`
 	}
@@ -507,27 +511,27 @@ func buildBackupCronJob(
 	// CUTOFF uses epoch arithmetic (busybox-compatible, since the rclone image is Alpine-based)
 	rcloneCmd := fmt.Sprintf(
 		`set -e`+
-			` && R="%s"`+
-			` && S3="%s"`+
+			` && set -- %s`+
+			` && S3=%s`+
 			// Step 1: incremental sync to fixed "latest" path
 			` && echo "Step 1: incremental sync to latest"`+
-			` && rclone sync /data/ "${S3}/latest" $R %s`+
+			` && rclone sync /data/ "${S3}/latest" "$@" %s`+
 			// Step 2: daily snapshot (copy latest to snapshots/YYYY-MM-DD)
 			` && TODAY=$(date -u +%%Y-%%m-%%d)`+
 			` && echo "Step 2: snapshot ${TODAY}"`+
-			` && rclone copy "${S3}/latest" "${S3}/snapshots/${TODAY}" $R %s`+
+			` && rclone copy "${S3}/latest" "${S3}/snapshots/${TODAY}" "$@" %s`+
 			// Step 3: prune snapshots older than retention period
 			` && CUTOFF=$(date -u -d @$(($(date -u +%%s) - 86400 * %d)) +%%Y-%%m-%%d)`+
 			` && echo "Step 3: pruning snapshots older than ${CUTOFF} (%d day retention)"`+
-			` && for dir in $(rclone lsf "${S3}/snapshots/" $R --dirs-only 2>/dev/null); do`+
+			` && for dir in $(rclone lsf "${S3}/snapshots/" "$@" --dirs-only 2>/dev/null); do`+
 			`   d=$(echo "$dir" | tr -d "/");`+
 			`   if [ "$d" \< "$CUTOFF" ]; then`+
 			`     echo "Pruning snapshot $d";`+
-			`     rclone purge "${S3}/snapshots/$d" $R -v;`+
+			`     rclone purge "${S3}/snapshots/$d" "$@" -v;`+
 			`   fi;`+
 			` done`+
 			` && echo "Backup complete"`,
-		s3Flags, remote, shellBackupRcloneArgs(&instance.Spec.Backup), shellBackupRcloneArgs(&instance.Spec.Backup),
+		s3Flags, shellRcloneLiteral(remote), shellBackupRcloneArgs(&instance.Spec.Backup), shellBackupRcloneArgs(&instance.Spec.Backup),
 		retentionDays, retentionDays,
 	)
 

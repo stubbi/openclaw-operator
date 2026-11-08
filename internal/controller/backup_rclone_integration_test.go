@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,7 +37,14 @@ func TestBackupRcloneContainer(t *testing.T) {
 	if os.Getenv("OPENCLAW_BACKUP_CONTAINER_TEST") != "1" {
 		t.Skip("set OPENCLAW_BACKUP_CONTAINER_TEST=1 to run the rclone image integration test")
 	}
-	creds := &s3Credentials{Bucket: "test", Provider: "Other", Endpoint: "http://127.0.0.1:9000", KeyID: "test-key", AppKey: "test-secret"}
+	for _, secret := range []string{"test-secret", "test secret"} {
+		t.Run(secret, func(t *testing.T) { runBackupRcloneContainer(t, secret) })
+	}
+}
+
+func runBackupRcloneContainer(t *testing.T, secret string) {
+	t.Helper()
+	creds := &s3Credentials{Bucket: "test", Provider: "Other", Endpoint: "http://127.0.0.1:9000", KeyID: "test-key", AppKey: secret}
 	instance := &openclawv1alpha1.OpenClawInstance{ObjectMeta: metav1.ObjectMeta{Name: "smoke", Namespace: "default"}, Spec: openclawv1alpha1.OpenClawInstanceSpec{Backup: openclawv1alpha1.BackupSpec{
 		Schedule: "0 2 * * *", Excludes: []string{"/cache/**", "/cache with spaces/**", "/quote'/**"}, Transfers: resources.Ptr(int32(32)), Checkers: resources.Ptr(int32(64)), FastList: true,
 	}}}
@@ -56,12 +64,13 @@ func TestBackupRcloneContainer(t *testing.T) {
 mkdir -p /store/test /data/cache /data/workspace
 printf important > /data/workspace/state.json
 for i in $(seq 1 1000); do printf cache > /data/cache/$i; done
-rclone serve s3 /store --addr 127.0.0.1:9000 --auth-key test-key,test-secret >/tmp/server.log 2>&1 &
+rclone serve s3 /store --addr 127.0.0.1:9000 --auth-key 'test-key,TEST_SECRET' >/tmp/server.log 2>&1 &
 server=$!
 trap 'kill "$server"' EXIT
-export S3_ENDPOINT=http://127.0.0.1:9000 S3_ACCESS_KEY_ID=test-key S3_SECRET_ACCESS_KEY=test-secret
+export S3_ENDPOINT=http://127.0.0.1:9000 S3_ACCESS_KEY_ID=test-key S3_SECRET_ACCESS_KEY='TEST_SECRET'
 for i in $(seq 1 50); do if rclone lsd :s3:test --s3-provider=Other --s3-endpoint="$S3_ENDPOINT" --s3-access-key-id="$S3_ACCESS_KEY_ID" --s3-secret-access-key="$S3_SECRET_ACCESS_KEY" --retries=1 --low-level-retries=1 >/dev/null 2>&1; then break; fi; sleep 0.1; done
 `
+	script = strings.ReplaceAll(script, "TEST_SECRET", secret)
 	// Two fresh snapshot destinations both contain every file with defaults.
 	script += command(true, "baseline-1", &openclawv1alpha1.BackupSpec{}) + "\n" + command(true, "baseline-2", &openclawv1alpha1.BackupSpec{}) + "\n"
 	script += `test "$(find /store/test/baseline-1 -type f | wc -l)" -eq 1001
@@ -82,7 +91,16 @@ echo 'PASS: fresh snapshots 1001/1001 files, filtered backup 1 file, periodic sn
 `
 	runCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, "docker", "run", "--rm", "-i", "--network", "none", "--entrypoint", "sh", RcloneImage, "-s")
+	name := fmt.Sprintf("openclaw-backup-%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)
+		defer stop()
+		out, err := exec.CommandContext(cleanupCtx, "docker", "rm", "-f", name).CombinedOutput()
+		if err != nil && !strings.Contains(string(out), "No such container") {
+			t.Errorf("remove owned backup fixture: %v: %s", err, out)
+		}
+	})
+	cmd := exec.CommandContext(runCtx, "docker", "run", "--rm", "--name", name, "-i", "--network", "none", "--entrypoint", "sh", RcloneImage, "-s")
 	cmd.Stdin = strings.NewReader(script)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

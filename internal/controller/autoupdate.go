@@ -704,8 +704,15 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 	if existingJob != nil {
 		finished, condition := isJobFinished(existingJob)
 		if finished && condition == batchv1.JobComplete {
-			// A completed Job may be observed after the deadline on a delayed
-			// reconcile. Its Kubernetes deadline already bounded execution.
+			// Legacy Jobs may have had no execution deadline. A delayed reconcile
+			// must use completion evidence, not assume Kubernetes bounded them.
+			completed := existingJob.Status.CompletionTime
+			if completed != nil && completed.After(started.Add(timeout)) {
+				return ctrl.Result{}, false, fmt.Errorf("pre-update backup completed after its %s deadline", timeout)
+			}
+			if completed == nil && remaining <= 0 {
+				return ctrl.Result{}, false, fmt.Errorf("pre-update backup has no completion time proving it finished within %s", timeout)
+			}
 			r.Recorder.Event(instance, corev1.EventTypeNormal, "PreUpdateBackupComplete", "Pre-update backup completed successfully")
 			return ctrl.Result{}, true, nil
 		}
@@ -720,6 +727,18 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 	}
 	if remaining <= 0 {
 		return ctrl.Result{}, false, fmt.Errorf("pre-update backup timed out after %s", timeout)
+	}
+	if existingJob != nil {
+		bounded, boundErr := r.boundPreUpdateBackupJob(ctx, existingJob, started.Add(timeout))
+		if boundErr != nil {
+			if apierrors.IsConflict(boundErr) {
+				return ctrl.Result{RequeueAfter: time.Second}, false, nil
+			}
+			return ctrl.Result{}, false, fmt.Errorf("bound pre-update backup job: %w", boundErr)
+		}
+		if bounded {
+			return ctrl.Result{Requeue: true}, false, nil
+		}
 	}
 
 	// Scale down StatefulSet
@@ -799,6 +818,26 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 
 	logger.Info("Pre-update backup job still running", "job", jobName)
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, false, nil
+}
+
+// boundPreUpdateBackupJob retrofits the execution bound without extending a
+// shorter existing deadline. Kubernetes counts it from Job start, not reconcile.
+func (r *OpenClawInstanceReconciler) boundPreUpdateBackupJob(ctx context.Context, job *batchv1.Job, budgetEnd time.Time) (bool, error) {
+	jobStart := time.Now()
+	if job.Status.StartTime != nil && !job.Status.StartTime.IsZero() {
+		jobStart = job.Status.StartTime.Time
+	}
+	deadline := max(int64(1), int64(budgetEnd.Sub(jobStart).Seconds()))
+	if job.Spec.ActiveDeadlineSeconds != nil && *job.Spec.ActiveDeadlineSeconds <= deadline {
+		return false, nil
+	}
+	original := job.DeepCopy()
+	job.Spec.ActiveDeadlineSeconds = &deadline
+	patch := client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})
+	if err := r.Patch(ctx, job, patch); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // stopPreUpdateBackup waits for foreground deletion, then checks Pods as well.
