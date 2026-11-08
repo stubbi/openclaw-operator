@@ -98,7 +98,7 @@ kubebuilder-generated config/rbac/role.yaml.
 # Batch API (backup/restore Jobs, periodic backup CronJobs)
 - apiGroups: ["batch"]
   resources: ["jobs"]
-  verbs: ["get", "list", "watch", "create", "delete"]
+  verbs: ["get", "list", "watch", "create", "patch", "delete"]
 - apiGroups: ["batch"]
   resources: ["cronjobs"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
