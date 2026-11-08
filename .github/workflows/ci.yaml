@@ -269,12 +269,19 @@ jobs:
 
       - name: Pre-pull test images
         run: |
-          docker pull docker.io/chromedp/headless-shell:stable
-          kind load docker-image docker.io/chromedp/headless-shell:stable --name e2e-test
+          # `kind load docker-image` imports with --all-platforms, which fails
+          # for multi-arch images when Docker only holds the runner's platform
+          # ("content digest ... not found"). Import just that platform.
+          preload() {
+            docker pull --platform linux/amd64 "$1"
+            docker save --platform linux/amd64 "$1" | docker exec -i e2e-test-control-plane \
+              ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs --platform linux/amd64 -
+          }
+          preload docker.io/chromedp/headless-shell:stable
           # Must match the reference the CDP spec requests exactly, or the
           # pre-load is a no-op and the test pulls from the network mid-run.
-          docker pull docker.io/curlimages/curl:8.11.1
-          kind load docker-image docker.io/curlimages/curl:8.11.1 --name e2e-test
+          preload docker.io/curlimages/curl:8.11.1
+          docker exec e2e-test-control-plane crictl images | grep -E 'headless-shell|curlimages'
 
       - name: Install CRDs
         run: make install
