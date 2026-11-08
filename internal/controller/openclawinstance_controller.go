@@ -108,7 +108,7 @@ type OpenClawInstanceReconciler struct {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
@@ -183,8 +183,11 @@ func (r *OpenClawInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if instance.Status.AutoUpdate.PendingVersion != "" && !instance.Spec.Suspended {
 		result, err := r.reconcileAutoUpdate(ctx, instance)
 		if err != nil {
-			logger.Error(err, "Auto-update error (non-fatal)")
+			logger.Error(err, "Auto-update error")
 			r.Recorder.Event(instance, corev1.EventTypeWarning, "AutoUpdateError", err.Error())
+			// Do not reconcile the desired running workload after an in-progress
+			// update fails: a backup may still be reading its quiesced PVC.
+			return ctrl.Result{}, err
 		}
 		if result.Requeue || result.RequeueAfter > 0 {
 			if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
