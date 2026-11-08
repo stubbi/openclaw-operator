@@ -191,6 +191,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Verify conformance configuration guard without a cluster
+        run: bash hack/test-conformance-guard.sh
+
       - name: Run tests
         run: make test
 
