@@ -1461,7 +1461,7 @@ spec:
         enabled: true
         labels:
           release: kube-prometheus-stack  # must match Prometheus ruleSelector
-        runbookBaseURL: https://stubbi.github.io/openclaw-operator/latest/runbooks  # default
+        runbookBaseURL: https://github.com/stubbi/openclaw-operator/blob/main/docs/runbooks  # default
 ```
 
 Alerts: `OpenClawReconcileErrors`, `OpenClawInstanceDegraded`, `OpenClawSlowReconciliation`, `OpenClawPodCrashLooping`, `OpenClawPodOOMKilled`, `OpenClawPVCNearlyFull`, `OpenClawAutoUpdateRollback`

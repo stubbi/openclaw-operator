@@ -5732,7 +5732,7 @@ spec:
                               for Prometheus rule selector matching)
                             type: object
                           runbookBaseURL:
-                            default: https://stubbi.github.io/openclaw-operator/latest/runbooks
+                            default: https://github.com/stubbi/openclaw-operator/blob/main/docs/runbooks
                             description: RunbookBaseURL is the base URL for alert
                               runbook links
                             type: string

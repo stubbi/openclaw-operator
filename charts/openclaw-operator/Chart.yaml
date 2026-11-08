@@ -31,7 +31,7 @@ annotations:
   artifacthub.io/prerelease: 'false'
   artifacthub.io/links: |
     - name: Documentation
-      url: https://stubbi.github.io/openclaw-operator/
+      url: https://github.com/stubbi/openclaw-operator/tree/main/docs/
     - name: OperatorHub
       url: https://operatorhub.io/operator/openclaw-operator
     - name: Artifact Hub

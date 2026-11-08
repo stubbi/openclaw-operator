@@ -10269,8 +10269,9 @@ func TestBuildPrometheusRule(t *testing.T) {
 		if !ok || runbook == "" {
 			t.Errorf("rule %d missing runbook_url", i)
 		}
-		if !strings.HasPrefix(runbook, "https://stubbi.github.io/openclaw-operator/latest/runbooks/") {
-			t.Errorf("rule %d runbook_url = %q, expected default base URL", i, runbook)
+		want := "https://github.com/stubbi/openclaw-operator/blob/main/docs/runbooks/" + rule["alert"].(string) + ".md"
+		if runbook != want {
+			t.Errorf("rule %d runbook_url = %q, want %q", i, runbook, want)
 		}
 	}
 }
@@ -10729,9 +10730,8 @@ func TestBuildPrometheusRule_CustomRunbookURL(t *testing.T) {
 	}
 }
 
-// Instances created while the CRD defaulted runbookBaseURL to the old docs
-// host have that value persisted in their spec; it must map to the current
-// default instead of producing dead links.
+// A stored URL equal to the old default may have been explicitly chosen.
+// Preserve it because the API cannot distinguish it from a stored default.
 func TestBuildPrometheusRule_LegacyDefaultRunbookURL(t *testing.T) {
 	instance := newTestInstance("my-instance")
 	instance.Spec.Observability.Metrics.PrometheusRule = &openclawv1alpha1.PrometheusRuleSpec{
@@ -10748,8 +10748,9 @@ func TestBuildPrometheusRule_LegacyDefaultRunbookURL(t *testing.T) {
 	for i, r := range rules {
 		annotations := r.(map[string]interface{})["annotations"].(map[string]interface{})
 		runbook := annotations["runbook_url"].(string)
-		if !strings.HasPrefix(runbook, defaultRunbookBaseURL+"/") {
-			t.Errorf("rule %d runbook_url = %q, expected the current default base URL", i, runbook)
+		want := "https://paperclip.inc/docs/operators/openclaw/runbooks/" + r.(map[string]interface{})["alert"].(string)
+		if runbook != want {
+			t.Errorf("rule %d runbook_url = %q, want stored value %q", i, runbook, want)
 		}
 	}
 }
