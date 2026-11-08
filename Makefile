@@ -54,8 +54,14 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet envtest test-plugin-installer ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+test: manifests generate fmt vet envtest test-plugin-installer test-envtest-recipe ## Run tests.
+	assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" || { echo "failed to obtain envtest assets" >&2; exit 1; }; \
+	  if [ -z "$$assets" ]; then echo "envtest returned an empty asset path" >&2; exit 1; fi; \
+	  KUBEBUILDER_ASSETS="$$assets" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+.PHONY: test-envtest-recipe
+test-envtest-recipe: ## Verify envtest setup failures stop the test recipe.
+	bash hack/test-envtest-make.sh
 
 .PHONY: test-plugin-installer
 test-plugin-installer: ## Exercise the embedded plugin installer with Node.js 22+.
