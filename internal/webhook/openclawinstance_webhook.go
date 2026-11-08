@@ -712,8 +712,10 @@ var reservedInitContainerNames = map[string]bool{
 	"init-python":              true,
 	"init-skills":              true,
 	"init-plugins":             true,
+	"init-plugin-scratch":      true,
 	"init-ollama":              true,
 	"init-plugin-runtime-deps": true,
+	"init-tmp-dir":             true,
 }
 
 // validateInitContainers checks custom init container names.

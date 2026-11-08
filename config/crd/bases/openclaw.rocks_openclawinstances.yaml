@@ -5833,6 +5833,90 @@ spec:
                         type: string
                     type: object
                 type: object
+              pluginInstall:
+                description: PluginInstall configures the managed plugin installer.
+                properties:
+                  inheritEnv:
+                    description: |-
+                      InheritEnv copies spec.env and spec.envFrom into the installer. Defaults to
+                      true for compatibility. Set false to avoid exposing runtime credentials;
+                      operator-managed HOME, npm settings and CA bundle configuration remain.
+                    type: boolean
+                  readOnlyRootFilesystem:
+                    description: |-
+                      ReadOnlyRootFilesystem mounts the installer root filesystem read-only.
+                      A non-root init container prepares a private 0700 scratch directory in an
+                      emptyDir, mounted at /tmp via subPath. This avoids fsGroup's non-sticky
+                      world-writable volume root. Persistent npm prefix/cache paths remain writable.
+                      The emptyDir size limit follows resources.limits.ephemeral-storage when set,
+                      otherwise 128Mi. Defaults to false, preserving the image's sticky /tmp.
+                    type: boolean
+                  resources:
+                    description: |-
+                      Resources sets requests and limits for the plugin installer and, when enabled,
+                      its scratch-directory initializer. It does not change gateway resources.
+                      Resource claims are not supported; only requests and limits may be set.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This is an alpha field and requires enabling the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: plugin installer resource claims are not supported
+                      rule: '!has(self.claims) || size(self.claims) == 0'
+                type: object
               plugins:
                 description: |-
                   Plugins is a list of plugins to install via init container.

@@ -85,6 +85,10 @@ type OpenClawInstanceSpec struct {
 	// +optional
 	VerifiedPlugins []VerifiedPluginSpec `json:"verifiedPlugins,omitempty"`
 
+	// PluginInstall configures the managed plugin installer.
+	// +optional
+	PluginInstall *PluginInstallSpec `json:"pluginInstall,omitempty"`
+
 	// EnvFrom is a list of sources to populate environment variables from
 	// Use this for API keys and other secrets (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY)
 	// +optional

@@ -912,6 +912,7 @@ _Appears in:_
 | `skillPackUpdatePolicy` _string_ | SkillPackUpdatePolicy controls how workspace files seeded from "pack:"<br />skill entries are reconciled on pod start.<br />"Replace" (default) converges seeded pack files to the declared pack<br />revision on every pod start: changed files are overwritten and files that<br />were seeded by a previous revision but are no longer part of any declared<br />pack are removed. The operator tracks the seeded file set in a manifest<br />at /data/.skillpack-manifest on the data volume.<br />"CreateOnly" preserves the legacy behavior: pack files are only copied<br />when absent and never overwritten or removed, so updating a pinned pack<br />revision does not refresh already-seeded contents (see #564).<br />Only files at paths declared by pack: entries are affected; files from<br />spec.workspace.initialFiles are always seeded create-only. | Replace | Enum: [Replace CreateOnly] <br />Optional: \{\} <br /> |
 | `plugins` _string array_ | Plugins is a list of plugins to install via init container.<br />Each entry is an npm package name (e.g., "@openclaw/matrix" or<br />"@martian-engineering/lossless-claw"). An optional "npm:" prefix<br />selects the npm resolver; entries without a prefix use ClawHub.<br />Installation goes through the OpenClaw CLI's installer<br />("openclaw plugins install clawhub:<pkg>") rather than raw npm install<br />so packages published with workspace:* dependency markers resolve<br />correctly. npm lifecycle scripts are disabled for security. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
 | `verifiedPlugins` _[VerifiedPluginSpec](#verifiedpluginspec) array_ | VerifiedPlugins installs exact public npm artifacts after checking registry<br />metadata and downloaded bytes against a committed SHA-512 integrity value.<br />Mutually exclusive with Plugins. Requires an OpenClaw image supporting<br />npm-pack: installs and --accept-capabilities. Changes trigger a pod rollout.<br />Install-only: removing entries does not uninstall persisted plugins or<br />revoke consent. This is not an exclusive runtime plugin allowlist. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
+| `pluginInstall` _[PluginInstallSpec](#plugininstallspec)_ | PluginInstall configures the managed plugin installer. |  | Optional: \{\} <br /> |
 | `envFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#envfromsource-v1-core) array_ | EnvFrom is a list of sources to populate environment variables from<br />Use this for API keys and other secrets (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY) |  | Optional: \{\} <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#envvar-v1-core) array_ | Env is a list of environment variables to set in the container |  | Optional: \{\} <br /> |
 | `resources` _[ResourcesSpec](#resourcesspec)_ | Resources specifies the compute resources for the OpenClaw container |  | Optional: \{\} <br /> |
@@ -1003,6 +1004,24 @@ _Appears in:_
 | `accessModes` _[PersistentVolumeAccessMode](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#persistentvolumeaccessmode-v1-core) array_ | AccessModes contains the desired access modes for the PVC | [ReadWriteOnce] | Optional: \{\} <br /> |
 | `existingClaim` _string_ | ExistingClaim is the name of an existing PVC to use |  | Optional: \{\} <br /> |
 | `orphan` _boolean_ | Orphan controls whether the PVC is retained when the OpenClawInstance is deleted.<br />When true (the default), the operator removes the owner reference from the PVC<br />before deleting the CR so Kubernetes does not garbage-collect it.<br />Set to false if you want the PVC deleted together with the CR. | true | Optional: \{\} <br /> |
+
+
+#### PluginInstallSpec
+
+
+
+PluginInstallSpec configures the managed installer for Plugins and VerifiedPlugins.
+
+
+
+_Appears in:_
+- [OpenClawInstanceSpec](#openclawinstancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#resourcerequirements-v1-core)_ | Resources sets requests and limits for the plugin installer and, when enabled,<br />its scratch-directory initializer. It does not change gateway resources.<br />Resource claims are not supported; only requests and limits may be set. |  | Optional: \{\} <br /> |
+| `inheritEnv` _boolean_ | InheritEnv copies spec.env and spec.envFrom into the installer. Defaults to<br />true for compatibility. Set false to avoid exposing runtime credentials;<br />operator-managed HOME, npm settings and CA bundle configuration remain. |  | Optional: \{\} <br /> |
+| `readOnlyRootFilesystem` _boolean_ | ReadOnlyRootFilesystem mounts the installer root filesystem read-only.<br />A non-root init container prepares a private 0700 scratch directory in an<br />emptyDir, mounted at /tmp via subPath. This avoids fsGroup's non-sticky<br />world-writable volume root. Persistent npm prefix/cache paths remain writable.<br />The emptyDir size limit follows resources.limits.ephemeral-storage when set,<br />otherwise 128Mi. Defaults to false, preserving the image's sticky /tmp. |  | Optional: \{\} <br /> |
 
 
 #### PodDisruptionBudgetSpec

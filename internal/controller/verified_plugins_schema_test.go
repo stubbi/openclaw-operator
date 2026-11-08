@@ -22,6 +22,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,6 +34,48 @@ import (
 // Exercise the generated schema with a real API server, including when the
 // optional validating webhook is not installed.
 var _ = Describe("Verified plugin CRD validation", func() {
+	It("rejects unsupported installer resource claims on create and update", func() {
+		instance := &openclawv1alpha1.OpenClawInstance{
+			ObjectMeta: metav1.ObjectMeta{Name: "installer-claims-schema", Namespace: "default"},
+			Spec: openclawv1alpha1.OpenClawInstanceSpec{
+				Plugins: []string{"npm:example@1.2.3"},
+				PluginInstall: &openclawv1alpha1.PluginInstallSpec{
+					Resources: corev1.ResourceRequirements{Claims: []corev1.ResourceClaim{{Name: "unsupported"}}},
+				},
+			},
+		}
+		createErr := k8sClient.Create(ctx, instance, client.DryRunAll)
+		Expect(apierrors.IsInvalid(createErr)).To(BeTrue(), "expected resource claims to fail API validation: %v", createErr)
+		Expect(createErr.Error()).To(ContainSubstring("plugin installer resource claims are not supported"))
+
+		instance.Spec.PluginInstall.Resources.Claims = nil
+		Expect(k8sClient.Create(ctx, instance)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, instance)).To(Succeed()) })
+		instance.Spec.PluginInstall.Resources.Claims = []corev1.ResourceClaim{{Name: "unsupported"}}
+		updateErr := k8sClient.Update(ctx, instance, client.DryRunAll)
+		Expect(apierrors.IsInvalid(updateErr)).To(BeTrue(), "expected resource claims to fail API validation: %v", updateErr)
+		Expect(updateErr.Error()).To(ContainSubstring("plugin installer resource claims are not supported"))
+	})
+
+	It("preserves installer controls through API admission", func() {
+		inherit := false
+		instance := &openclawv1alpha1.OpenClawInstance{
+			ObjectMeta: metav1.ObjectMeta{Name: "installer-schema", Namespace: "default"},
+			Spec: openclawv1alpha1.OpenClawInstanceSpec{
+				Plugins: []string{"npm:example@1.2.3"},
+				PluginInstall: &openclawv1alpha1.PluginInstallSpec{
+					InheritEnv: &inherit, ReadOnlyRootFilesystem: true,
+					Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, instance, client.DryRunAll)).To(Succeed())
+		Expect(instance.Spec.PluginInstall).NotTo(BeNil())
+		Expect(instance.Spec.PluginInstall.InheritEnv).To(Equal(&inherit))
+		Expect(instance.Spec.PluginInstall.ReadOnlyRootFilesystem).To(BeTrue())
+		Expect(instance.Spec.PluginInstall.Resources.Limits.Memory().Cmp(resource.MustParse("1Gi"))).To(BeZero())
+	})
+
 	DescribeTable("validates declarative pins", func(version, integrity string, legacy, duplicate, valid bool) {
 		pin := openclawv1alpha1.VerifiedPluginSpec{
 			Package: "@example/plugin", Version: version, Integrity: integrity,
