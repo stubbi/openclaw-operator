@@ -171,7 +171,7 @@ func enrichConfigWithGatewayAuth(configJSON []byte, token string) ([]byte, error
 
 	// Only set mode to "token" if the user hasn't chosen a mode already.
 	if _, hasMode := auth["mode"]; !hasMode {
-		auth["mode"] = "token" //nolint:goconst // OpenClaw auth mode, not k8s Secret key
+		auth["mode"] = "token" // OpenClaw auth mode, not k8s Secret key
 	}
 
 	auth["token"] = token
