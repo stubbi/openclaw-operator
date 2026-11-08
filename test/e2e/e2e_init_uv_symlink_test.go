@@ -50,7 +50,7 @@ var _ = Describe("init-uv with a dangling uv symlink (#626)", func() {
 		_ = k8sClient.Delete(ctx, ns)
 	})
 
-	It("replaces the dangling link instead of failing", func() {
+	DescribeTable("handles gateway-created links", func(seed, verify string, mounts []corev1.VolumeMount) {
 		if os.Getenv("E2E_SKIP_RESOURCE_VALIDATION") == "true" {
 			Skip("Skipping resource validation in minimal mode")
 		}
@@ -94,7 +94,7 @@ var _ = Describe("init-uv with a dangling uv symlink (#626)", func() {
 						Image:           "docker.io/library/busybox:1.37",
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Command: []string{"sh", "-c",
-							"mkdir -p /data/.local/bin && ln -sfn /home/openclaw/.openclaw/tools/uv/gone/uv /data/.local/bin/uv && ls -l /data/.local/bin"},
+							seed},
 						SecurityContext: restricted(),
 						VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
 					},
@@ -106,9 +106,9 @@ var _ = Describe("init-uv with a dangling uv symlink (#626)", func() {
 						Image:           "docker.io/library/busybox:1.37",
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Command: []string{"sh", "-c",
-							`f=/data/.local/bin/uv; ls -l /data/.local/bin; [ ! -L "$f" ] && [ -f "$f" ] && [ -x "$f" ]`},
+							verify},
 						SecurityContext: restricted(),
-						VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
+						VolumeMounts:    mounts,
 					},
 				},
 				Volumes: []corev1.Volume{
@@ -131,5 +131,14 @@ var _ = Describe("init-uv with a dangling uv symlink (#626)", func() {
 				"pod phase %s, init: %v, containers: %v",
 				got.Status.Phase, got.Status.InitContainerStatuses, got.Status.ContainerStatuses)
 		}, 3*time.Minute, 2*time.Second).Should(Succeed())
-	})
+	},
+		Entry("replaces a dangling link",
+			"mkdir -p /data/.local/bin && ln -sfn /home/openclaw/.openclaw/tools/uv/gone/uv /data/.local/bin/uv",
+			`f=/data/.local/bin/uv; [ ! -L "$f" ] && [ -f "$f" ] && [ -x "$f" ]`,
+			[]corev1.VolumeMount{{Name: "data", MountPath: "/data"}}),
+		Entry("preserves a relative link crossing the gateway mounts",
+			"mkdir -p /data/.local/bin /data/tools && echo pinned > /data/tools/uv && chmod +x /data/tools/uv && ln -s ../../.openclaw/tools/uv /data/.local/bin/uv",
+			`f=/home/openclaw/.local/bin/uv; [ -L "$f" ] && [ "$(readlink "$f")" = ../../.openclaw/tools/uv ] && [ "$(cat "$f")" = pinned ]`,
+			[]corev1.VolumeMount{{Name: "data", MountPath: "/home/openclaw/.openclaw"}, {Name: "data", MountPath: "/home/openclaw/.local", SubPath: ".local"}}),
+	)
 })

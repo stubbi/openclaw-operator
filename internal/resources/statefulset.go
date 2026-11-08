@@ -1726,14 +1726,48 @@ mkdir -p /data/.local/bin /data/.cache /data/.config /data/skills
 f=/data/.local/bin/uv
 if [ -L "$f" ]; then
   link=$(readlink "$f")
-  # Map gateway mount points back to /data. Relative targets resolve
-  # against the link's directory, which is the same in both containers.
+  # Normalize the link in the gateway's namespace first: .local and
+  # .openclaw are distinct mounts there, but /data is a single tree here.
   case "$link" in
-    /home/openclaw/.local/*) target="/data/.local/${link#/home/openclaw/.local/}" ;;
-    /home/openclaw/.openclaw/*) target="/data/${link#/home/openclaw/.openclaw/}" ;;
-    /*) target="$link" ;;
-    *) target="/data/.local/bin/$link" ;;
+    /*) path="$link" ;;
+    *) path="/home/openclaw/.local/bin/$link" ;;
   esac
+  # Split on slash without pathname expansion. If a component is itself a
+  # link, the gateway's resolution may differ; preserve rather than replace
+  # a potentially valid user pin that cannot be assessed from this container.
+  oldIFS=$IFS
+  IFS=/
+  set -f
+  set -- $path
+  IFS=$oldIFS
+  set +f
+  normalized=
+  uncertain=false
+  for part do
+    case "$part" in
+      ''|.) continue ;;
+      ..) normalized=${normalized%/*} ;;
+      *) normalized="$normalized/$part" ;;
+    esac
+    case "$normalized" in
+      /home/openclaw/.local/*) candidate="/data/.local/${normalized#/home/openclaw/.local/}" ;;
+      /home/openclaw/.openclaw/*) candidate="/data/${normalized#/home/openclaw/.openclaw/}" ;;
+      *) candidate= ;;
+    esac
+    if [ -n "$candidate" ] && [ -L "$candidate" ]; then
+      uncertain=true
+      break
+    fi
+  done
+  case "$normalized" in
+    /home/openclaw/.local/*) target="/data/.local/${normalized#/home/openclaw/.local/}" ;;
+    /home/openclaw/.openclaw/*) target="/data/${normalized#/home/openclaw/.openclaw/}" ;;
+    *) uncertain=true ;;
+  esac
+  if [ "$uncertain" = true ]; then
+    echo "keeping uv symlink (target $link cannot be checked reliably)"
+    exit 0
+  fi
   if [ -e "$target" ] || [ -L "$target" ]; then
     echo "uv already installed (symlink to $link)"
     exit 0
@@ -1767,8 +1801,9 @@ echo "uv $("$f" --version) installed"`
 // gateway container, for example to pin a newer uv under ~/.openclaw. Absolute
 // targets use gateway paths, which do not exist here, so a link that is valid
 // for the gateway would look dangling to this container. The script maps the
-// two gateway mount points back to /data before deciding: a link whose target
-// exists is kept, a link whose target is gone is replaced. The binary is
+// gateway path before mapping its mount points back to /data: a link whose
+// target exists is kept and a known-missing target is replaced. Links whose
+// resolution cannot be verified from this container are kept. The binary is
 // copied to a temporary file and renamed over the destination, so the script
 // never writes through a symlink and a dangling link cannot fail the pod
 // start. See #626.

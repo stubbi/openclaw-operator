@@ -219,6 +219,60 @@ func TestUvInitScript_GatewayLocalSymlinkIsKept(t *testing.T) {
 	}
 }
 
+// A relative gateway link can cross from the .local subPath mount into
+// the separate .openclaw root mount. The init container sees a different tree.
+func TestUvInitScript_CrossMountRelativeSymlinkIsKept(t *testing.T) {
+	e := newUvScriptEnv(t)
+	e.mkBin(t)
+	pinned := filepath.Join(e.data, "tools", "uv")
+	if err := os.MkdirAll(filepath.Dir(pinned), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pinned, []byte("pinned"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := "../../.openclaw/tools/uv"
+	if err := os.Symlink(link, e.uvPath()); err != nil {
+		t.Fatal(err)
+	}
+	e.run(t)
+	if got, err := os.Readlink(e.uvPath()); err != nil || got != link {
+		t.Fatalf("valid gateway link replaced: %q, %v", got, err)
+	}
+}
+
+// Targets outside the shared mounts, or through another symlink, cannot be
+// resolved reliably in the init image. Preserve them rather than replacing a
+// potentially valid pin based on the init container's different filesystem.
+func TestUvInitScript_UncertainSymlinksAreKept(t *testing.T) {
+	for _, tc := range []struct {
+		name, link string
+		setup      func(*testing.T, *uvScriptEnv)
+	}{
+		{name: "outside shared mounts", link: "/opt/uv/bin/uv"},
+		{name: "intermediate symlink", link: "../../.openclaw/alias/uv", setup: func(t *testing.T, e *uvScriptEnv) {
+			if err := os.Symlink("/some/gateway/path", filepath.Join(e.data, "alias")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newUvScriptEnv(t)
+			e.mkBin(t)
+			if tc.setup != nil {
+				tc.setup(t, e)
+			}
+			if err := os.Symlink(tc.link, e.uvPath()); err != nil {
+				t.Fatal(err)
+			}
+			e.run(t)
+			if got, err := os.Readlink(e.uvPath()); err != nil || got != tc.link {
+				t.Fatalf("link replaced: %q, %v", got, err)
+			}
+		})
+	}
+}
+
 // A stale temporary file, even a dangling link, from an interrupted earlier
 // run must not block the copy.
 func TestUvInitScript_StaleTempFileIsIgnored(t *testing.T) {
