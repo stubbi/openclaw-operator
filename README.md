@@ -1305,7 +1305,7 @@ The operator follows a **secure-by-default** philosophy. Every instance ships wi
 
 ### Defaults
 
-- **Non-root execution**: containers run as UID 1000; root (UID 0) is blocked by the validating webhook (exception: Ollama sidecar requires root per the official image)
+- **Non-root execution**: containers run as UID 1000; pod-level root (UID 0) is blocked by the validating webhook (exception: Ollama sidecar requires root per the official image)
 - **Read-only root filesystem**: enabled by default for the main container and the Chromium sidecar; the PVC at `~/.openclaw/` provides writable home, and a `/tmp` emptyDir handles temp files. The `init-tmp-dir` init container gives that `/tmp` the sticky bit (mode `1777`), which OpenClaw 2026.9.6 and later require before they create temporary workspaces; the root of an emptyDir is `2777` under `fsGroup` and cannot be changed from the pod spec
 - **All capabilities dropped**: no ambient Linux capabilities
 - **Seccomp RuntimeDefault**: syscall filtering enabled
@@ -1313,13 +1313,13 @@ The operator follows a **secure-by-default** philosophy. Every instance ships wi
 - **Minimal RBAC**: each instance gets its own ServiceAccount with read-only access to its own ConfigMap; operator can create/update Secrets only for operator-managed gateway tokens
 - **No automatic token mounting**: `automountServiceAccountToken: false` on both ServiceAccounts and pod specs (enabled only when `selfConfigure` is active)
 - **Secret validation**: the operator checks that all referenced Secrets exist and sets a `SecretsReady` condition
-- **Security context propagation**: when `podSecurityContext.runAsNonRoot` is set to `false`, the operator propagates this to init containers and applicable sidecars (tailscale, web terminal) so there is no contradiction between pod-level and container-level settings. Self-consistent sidecars (gateway-proxy, chromium, ollama) retain their own security contexts. The `containerSecurityContext.runAsNonRoot` and `containerSecurityContext.runAsUser` fields allow granular control over the main container independently of the pod level.
+- **Security context propagation**: when `podSecurityContext.runAsNonRoot` is set to `false`, the operator propagates this to init containers and applicable sidecars (tailscale, web terminal) so there is no contradiction between pod-level and container-level settings. Self-consistent sidecars (gateway-proxy, chromium, ollama) retain their own security contexts. The `containerSecurityContext.runAsNonRoot` and `containerSecurityContext.runAsUser` fields allow granular control over the main container independently of the pod level. The `init-tmp-dir` helper follows both effective values, including an explicit container override of `runAsUser: 0` with `runAsNonRoot: false`, while retaining its read-only root filesystem, dropped capabilities, and disabled privilege escalation.
 
 ### Validating webhook
 
 | Check | Severity | Behavior |
 |-------|----------|----------|
-| `runAsUser: 0` | Error | Blocked: root execution not allowed |
+| `podSecurityContext.runAsUser: 0` | Error | Blocked: pod-level root execution not allowed |
 | Reserved init container name | Error | `init-config`, `init-pnpm`, `init-python`, `init-skills`, `init-ollama` are reserved |
 | Invalid skill name | Error | Only alphanumeric, `-`, `_`, `/`, `.`, `@` allowed (max 128 chars). `npm:` prefix for npm packages, `pack:` prefix for skill packs; bare `npm:` or `pack:` is rejected |
 | Invalid CA bundle config | Error | Exactly one of `configMapName` or `secretName` must be set |
