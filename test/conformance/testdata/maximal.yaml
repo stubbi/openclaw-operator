@@ -11,7 +11,8 @@ spec:
     raw:
       agents:
         defaults:
-          sandbox: true
+          sandbox:
+            mode: all
   resources:
     requests:
       cpu: 500m
