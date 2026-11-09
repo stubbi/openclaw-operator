@@ -1120,7 +1120,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled enables PrometheusRule creation with operator alerts | false | Optional: \{\} <br /> |
 | `labels` _object (keys:string, values:string)_ | Labels to add to the PrometheusRule (e.g., for Prometheus rule selector matching) |  | Optional: \{\} <br /> |
-| `runbookBaseURL` _string_ | RunbookBaseURL is the base URL for alert runbook links | https://paperclip.inc/docs/operators/openclaw/runbooks | Optional: \{\} <br /> |
+| `runbookBaseURL` _string_ | RunbookBaseURL is the base URL for alert runbook links | https://github.com/stubbi/openclaw-operator/blob/main/docs/runbooks | Optional: \{\} <br /> |
 
 
 #### RBACRule
