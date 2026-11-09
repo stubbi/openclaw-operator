@@ -1,13 +1,33 @@
 name: Verify Signing (drift detection)
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/verify-signing.yaml
+      - Makefile
+      - hack/test-verify-signing.py
   schedule:
     # Mondays at 13:00 UTC. Catches infra-broken signatures before users hit them.
     - cron: '0 13 * * 1'
   workflow_dispatch:
 
 jobs:
+  regression:
+    name: Signing verifier regressions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install PyYAML==6.0.3
+      - run: make test-verify-signing
+
   verify:
+    if: github.event_name != 'pull_request'
+    needs: regression
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,19 +47,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE || 'paperclipinc' }}
-        run: |
-          set +e
-          make verify-signing
-          rc=$?
-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          exit 0
+        run: make verify-signing
 
       - name: Open issue on failure
-        if: steps.verify.outputs.rc != '0'
+        if: failure() && steps.verify.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh issue create \
-            --title "[drift] Cosign verify failed for latest release" \
-            --label infra-broken \
-            --body "The weekly verify-signing workflow failed. The latest release's image is no longer cosign-verifiable. Investigate: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search '"[drift] Cosign verify failed for latest release" in:title' \
+            --json number,title --jq '.[] | select(.title == "[drift] Cosign verify failed for latest release") | .number')
+          if [ -n "$existing" ]; then
+            echo "An open signing-verification tracker already exists: $existing"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "[drift] Cosign verify failed for latest release" \
+              --label bug \
+              --body "The signing check failed for the selected release image. Inspect the log for artifact lookup, signature and SBOM attestation results: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
