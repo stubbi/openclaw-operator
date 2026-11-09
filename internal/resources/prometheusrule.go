@@ -26,7 +26,7 @@ import (
 	openclawv1alpha1 "github.com/paperclipinc/openclaw-operator/api/v1alpha1"
 )
 
-const defaultRunbookBaseURL = "https://paperclip.inc/docs/operators/openclaw/runbooks"
+const defaultRunbookBaseURL = "https://github.com/stubbi/openclaw-operator/blob/main/docs/runbooks"
 
 // PrometheusRuleGVK returns the GroupVersionKind for PrometheusRule
 func PrometheusRuleGVK() schema.GroupVersionKind {
@@ -173,6 +173,10 @@ func pvcClaimMatcher(instance *openclawv1alpha1.OpenClawInstance) string {
 }
 
 func buildAlert(alertName, expr, forDuration, severity, summary, runbookBase string) map[string]interface{} {
+	runbookURL := fmt.Sprintf("%s/%s", runbookBase, alertName)
+	if runbookBase == defaultRunbookBaseURL {
+		runbookURL += ".md"
+	}
 	return map[string]interface{}{
 		"alert": alertName,
 		"expr":  expr,
@@ -182,7 +186,7 @@ func buildAlert(alertName, expr, forDuration, severity, summary, runbookBase str
 		},
 		"annotations": map[string]interface{}{
 			"summary":     summary,
-			"runbook_url": fmt.Sprintf("%s/%s", runbookBase, alertName),
+			"runbook_url": runbookURL,
 		},
 	}
 }

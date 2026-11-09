@@ -1,0 +1,19 @@
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M60 10 C30 10 15 35 15 55 C15 75 30 95 45 100 L45 110 L55 110 L55 100 C55 100 60 102 65 100 L65 110 L75 110 L75 100 C90 95 105 75 105 55 C105 35 90 10 60 10Z" fill="url(#lobster-gradient)"/>
+  <path d="M20 45 C5 40 0 50 5 60 C10 70 20 65 25 55 C28 48 25 45 20 45Z" fill="url(#lobster-gradient)"/>
+  <path d="M100 45 C115 40 120 50 115 60 C110 70 100 65 95 55 C92 48 95 45 100 45Z" fill="url(#lobster-gradient)"/>
+  <path d="M45 15 Q35 5 30 8" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <path d="M75 15 Q85 5 90 8" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="41" cy="39" r="9" fill="#fafafa"/>
+  <circle cx="79" cy="39" r="9" fill="#fafafa"/>
+  <circle cx="42" cy="40" r="4.5" fill="#0a0a0b"/>
+  <circle cx="78" cy="40" r="4.5" fill="#0a0a0b"/>
+  <circle cx="40" cy="37" r="1.6" fill="#ffffff"/>
+  <circle cx="76" cy="37" r="1.6" fill="#ffffff"/>
+  <defs>
+    <linearGradient id="lobster-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f87171"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+  </defs>
+</svg>
