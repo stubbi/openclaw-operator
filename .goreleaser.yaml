@@ -25,7 +25,8 @@ dockers_v2:
     ids:
       - manager
     images:
-      - "ghcr.io/paperclipinc/openclaw-operator"
+      # Set by release.yaml (vars.IMAGE_NAMESPACE, default paperclipinc).
+      - 'ghcr.io/{{ envOrDefault "IMAGE_NAMESPACE" "paperclipinc" }}/openclaw-operator'
     tags:
       - "{{ .Tag }}"
       - "{{ .Major }}.{{ .Minor }}"
@@ -70,5 +71,5 @@ release:
   draft: true
   replace_existing_artifacts: true
   github:
-    owner: paperclipinc
+    owner: stubbi
     name: openclaw-operator

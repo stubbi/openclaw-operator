@@ -12,7 +12,7 @@
 
 **Self-host [OpenClaw](https://openclaw.ai) AI agents on Kubernetes with production-grade security, observability, and lifecycle management.**
 
-OpenClaw is an AI agent platform that acts on your behalf across Telegram, Discord, WhatsApp, and Signal. It manages your inbox, calendar, smart home, and more through 50+ integrations. While [Paperclip Inc.](https://paperclip.inc) offers fully managed hosting, this operator lets you run OpenClaw on your own infrastructure with the same operational rigor.
+OpenClaw is an AI agent platform that acts on your behalf across Telegram, Discord, WhatsApp, and Signal. It manages your inbox, calendar, smart home, and more through 50+ integrations. While Paperclip Inc. offers fully managed hosting, this operator lets you run OpenClaw on your own infrastructure with the same operational rigor.
 
 ---
 
@@ -84,7 +84,7 @@ Every request is validated against the instance's allowlist policy. Protected co
 | **Operational** | Instance suspension | Scale to zero with `spec.suspended: true` - all non-runtime resources remain managed, resume instantly with `false` |
 | **Resilient** | Self-healing lifecycle | PodDisruptionBudgets, health probes, automatic config rollouts via content hashing, 5-minute drift detection |
 | **Disk-Aware Readiness** | Opt-in ENOSPC guard | `spec.probes.diskReadiness` renders the readiness probe as an exec check that ANDs the gateway `/readyz` signal with a workspace writability + free-space check, so a full or read-only PVC drains the pod from Service endpoints instead of silently accepting writes it cannot persist. Liveness/startup stay HTTP so a full disk never turns into a CrashLoopBackOff. Defaulted off. |
-| **Backup/Restore** | S3-backed snapshots | Automatic backup to S3-compatible storage on deletion, pre-update, and on a cron schedule; restore into a new instance from any snapshot |
+| **Backup/Restore** | S3-backed snapshots | Automatic backup to S3-compatible storage on deletion, before updates, and on a cron schedule; configurable excludes, transfer concurrency, and a pre-update deadline |
 | **Workspace Seeding** | Initial files & dirs | Pre-populate the workspace with files and directories before the agent starts; reference an external ConfigMap for GitOps workflows |
 | **Gateway Auth** | Auto-generated tokens | Automatic shared-secret gateway authentication with a persistent token Secret per instance |
 | **Tailscale** | Tailnet access | Expose via Tailscale Serve or Funnel with SSO auth - no Ingress needed |
@@ -1057,6 +1057,10 @@ spec:
 make the bootstrap image reference immutable. Cluster defaults can provide the
 same block, while an instance-level `uvImage` takes precedence.
 
+The uv bootstrap preserves existing binaries and gateway-side symlink pins.
+It replaces a symlink only when its target is known to be missing in the
+shared data volume.
+
 ### Custom init containers and sidecars
 
 Add custom init containers (run after operator-managed ones) and sidecar containers:
@@ -1210,13 +1214,18 @@ spec:
     enabled: true
     checkInterval: "24h"         # how often to poll the registry (1h-168h)
     backupBeforeUpdate: true     # back up the PVC before applying an update
+    backupTimeout: "30m"         # budget including shutdown, scheduling, and retries (5m-24h)
     rollbackOnFailure: true      # auto-rollback if the new version fails health checks
     healthCheckTimeout: "10m"    # how long to wait for the pod to become ready (2m-30m)
 ```
 
 When enabled, the operator resolves `latest` to the highest stable semver tag on creation, then polls for newer versions on each `checkInterval`. Before updating, it optionally runs an S3 backup, then patches the image tag and monitors the rollout. If the pod fails to become ready within `healthCheckTimeout`, it reverts the image tag and (optionally) restores the PVC from the pre-update snapshot.
 
-Safety mechanisms include failed-version tracking (skips versions that failed health checks), a circuit breaker (pauses after 3 consecutive rollbacks), and full data restore when `backupBeforeUpdate` is enabled. Auto-update is a no-op for digest-pinned images (`spec.image.digest`).
+If pre-update backup exceeds `backupTimeout` (default `30m`), the operator stops the backup Job, waits for its Pods to terminate, and restarts the old version without applying the update. Cleanup and startup can add time beyond the backup budget. The deadline survives operator restarts; the Job also has a Kubernetes execution deadline. The next attempt waits for `checkInterval`. `spec.backup.timeout` remains the separate pre-delete timeout.
+
+If full backups consistently exceed the budget, every attempt will abort and the instance will stay on its old version. Set `backupTimeout` above the measured backup duration with headroom for shutdown, scheduling, and retries (for example, `1h` for a measured 35-minute backup). A longer budget also permits longer downtime. Failures set a persistent `AutoUpdateBlocked=True` condition with reason `PreUpdateBackupFailed` as soon as cleanup starts; it remains until a later update passes or skips the backup stage. The operator also records `lastUpdateError` and emits an `AutoUpdateAborted` Warning Event after recovery. See [backup timeout guidance and alerting](docs/backup-restore.md#pre-update-backup-deadline-and-transfer-controls).
+
+Safety mechanisms include failed-version tracking (skips versions that failed health checks), a circuit breaker (pauses after 3 consecutive rollbacks), and snapshot restore when `backupBeforeUpdate` is enabled. Auto-update is a no-op for digest-pinned images (`spec.image.digest`).
 
 See `status.autoUpdate` for update progress: `kubectl get openclawinstance my-agent -o jsonpath='{.status.autoUpdate}'`
 
@@ -1246,10 +1255,10 @@ Compatible with AWS S3, Backblaze B2, Cloudflare R2, MinIO, Wasabi, and any S3-c
 **When backups run automatically:**
 
 - **On delete** - the operator backs up the PVC before removing any resources. Subject to `spec.backup.timeout` (default: 30m) - if the backup does not complete in time, it is skipped automatically. Add `openclaw.rocks/skip-backup: "true"` to skip immediately.
-- **Before auto-update** - when `spec.autoUpdate.backupBeforeUpdate: true` (the default).
+- **Before auto-update** - when `spec.autoUpdate.backupBeforeUpdate: true` (the default), bounded by `spec.autoUpdate.backupTimeout` (default: 30m).
 - **On a schedule** - when `spec.backup.schedule` is set (cron expression).
 
-If the Secret does not exist, backups are silently skipped and operations proceed normally.
+If the Secret does not exist, pre-delete backups are skipped and the periodic CronJob is not created. An auto-update requiring a backup is aborted; the old version is restarted and the failure is recorded in `status.autoUpdate.lastUpdateError`.
 
 **Periodic scheduled backups:**
 
@@ -1265,6 +1274,23 @@ spec:
 ```
 
 The operator creates a Kubernetes CronJob that runs rclone to sync PVC data to S3. The CronJob uses pod affinity to co-locate on the same node as the StatefulSet pod (required for RWO PVCs). Backups use an incremental sync strategy: data is synced to a fixed `latest` path (only changed files uploaded), a daily snapshot is taken, and snapshots older than `retentionDays` are automatically pruned.
+
+**Reducing backup time:**
+
+All upload paths (pre-update, pre-delete, and periodic) support the same optional controls:
+
+```yaml
+spec:
+  backup:
+    excludes:                    # rclone globs relative to the PVC root
+      - "/tmp/plugin-captures/**"
+      - "/npm/**"
+    transfers: 32                # default: 8, range: 1-256
+    checkers: 64                 # default: 16, range: 1-256
+    fastList: true               # fewer listing requests, more memory; default: false
+```
+
+No paths are excluded by default. Only exclude data you can regenerate: excluded files are unavailable in new snapshots for rollback or recovery. Restore Jobs do not apply these filters, so older complete snapshots remain restorable. Excludes also apply when copying periodic snapshots, but do not purge existing remote objects or historical snapshots. Pre-update snapshots still upload to a separate timestamped path; increasing concurrency and excluding caches can reduce transfer time, but do not make those uploads incremental.
 
 **Restoring from backup:**
 
@@ -1461,7 +1487,7 @@ spec:
         enabled: true
         labels:
           release: kube-prometheus-stack  # must match Prometheus ruleSelector
-        runbookBaseURL: https://paperclip.inc/docs/operators/openclaw/runbooks  # default
+        runbookBaseURL: https://github.com/stubbi/openclaw-operator/blob/main/docs/runbooks  # default
 ```
 
 Alerts: `OpenClawReconcileErrors`, `OpenClawInstanceDegraded`, `OpenClawSlowReconciliation`, `OpenClawPodCrashLooping`, `OpenClawPodOOMKilled`, `OpenClawPVCNearlyFull`, `OpenClawAutoUpdateRollback`
@@ -1624,10 +1650,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide.
 - **v1.0.0**: API graduation to `v1`, conformance test suite, semver constraints for auto-update, HPA integration, cert-manager integration, multi-cluster support
 
 See the full [roadmap](ROADMAP.md) for details.
-
-## Don't Want to Self-Host?
-
-[Paperclip Inc.](https://paperclip.inc) offers fully managed hosting starting at **EUR 19/mo**. No Kubernetes cluster required. Setup, updates, and 24/7 uptime handled for you.
 
 ## Contributing
 

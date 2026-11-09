@@ -5,7 +5,7 @@
 Go-based Kubernetes operator for managing OpenClaw instances, built with controller-runtime (kubebuilder). CRD API group is `openclaw.rocks`, version `v1alpha1`.
 
 - **Module:** `github.com/paperclipinc/openclaw-operator`
-- **Go version:** 1.25
+- **Go version:** 1.25 minimum; 1.27.3 for CI, container builds, and releases
 - **GitHub:** `paperclipinc/openclaw-operator` (GHCR org: `paperclipinc`)
 
 ## Commands
@@ -166,8 +166,8 @@ All checks run on every push to main and every PR:
 
 | Job | What it does |
 |-----|-------------|
-| **Lint** | golangci-lint v1.64.5 |
-| **Test** | `make test` (unit + envtest integration) |
+| **Lint** | golangci-lint v2.15.0 on Go 1.25 and 1.27.3 |
+| **Test** | `make test` (unit + envtest integration) on Go 1.25 and 1.27.3 |
 | **Security Scan** | gosec + Trivy (CRITICAL/HIGH) |
 | **Reconcile Guard** | Grep check preventing bare `r.Update()` on managed resources |
 | **Chart Image Repository** | Verifies the chart `image.repository` default points at the canonical `ghcr.io/paperclipinc` namespace (guards against the #536 stale-namespace regression) |
@@ -210,8 +210,13 @@ Automated via release-please + GoReleaser:
 - `.release-please-manifest.json` — tracks current version
 - `.goreleaser.yaml` — `release.draft: true` (immutable releases require draft→publish flow)
 
-**Secrets required:**
-- `RELEASE_PLEASE_TOKEN` — classic PAT with `repo` scope; used for tag creation, release publishing, and OperatorHub cross-repo PRs
+**Credentials (repository settings):**
+- `vars.RELEASE_BOT_APP_ID` + `secrets.RELEASE_BOT_PRIVATE_KEY` — GitHub App used by release-please and for publishing the release, so the tag push and `release: published` trigger `release.yaml` and `operatorhub.yaml`. Preferred.
+- `secrets.RELEASE_PLEASE_TOKEN` — PAT fallback when the App is not configured.
+- Neither set: both workflows fall back to `GITHUB_TOKEN` and dispatch `release.yaml` / `operatorhub.yaml` explicitly. Release PR checks may require approval; verify checks for the exact PR head before merging. See [GitHub workflow triggers](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+- `vars.IMAGE_NAMESPACE` (default `paperclipinc`) — GHCR namespace for the image and the chart. Must match the chart's default `image.repository` (`release.yaml` fails early otherwise).
+- `secrets.GHCR_PUSH_TOKEN` + `vars.GHCR_PUSH_USER` — needed when `IMAGE_NAMESPACE` is owned by another account than the repository (the repository moved to `stubbi`; the images still live under `paperclipinc`).
+- `secrets.OPERATORHUB_FORK_TOKEN` — PAT for the OperatorHub cross-repo PRs.
 
 **Manual trigger:** `gh workflow run "OperatorHub Submission" -f tag=vX.Y.Z`
 

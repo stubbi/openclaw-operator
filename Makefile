@@ -54,8 +54,14 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet envtest test-plugin-installer ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+test: manifests generate fmt vet envtest test-plugin-installer test-envtest-recipe ## Run tests.
+	assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" || { echo "failed to obtain envtest assets" >&2; exit 1; }; \
+	  if [ -z "$$assets" ]; then echo "envtest returned an empty asset path" >&2; exit 1; fi; \
+	  KUBEBUILDER_ASSETS="$$assets" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+.PHONY: test-envtest-recipe
+test-envtest-recipe: ## Verify envtest setup failures stop the test recipe.
+	bash hack/test-envtest-make.sh
 
 .PHONY: test-plugin-installer
 test-plugin-installer: ## Exercise the embedded plugin installer with Node.js 22+.
@@ -133,23 +139,32 @@ conformance-gitops: ## Run the GitOps coexistence conformance category.
 conformance-failure: ## Run the failure-modes conformance category.
 	cd test/conformance && go test -v -timeout 20m -ginkgo.v -ginkgo.focus="failure modes" ./...
 
+# Releases signed before the repository moved from paperclipinc to stubbi carry
+# the old workflow identity, later ones the new one; accept both.
+SIGNING_IDENTITY_REGEXP ?= ^https://github.com/(paperclipinc|stubbi)/openclaw-operator/.github/workflows/.*
+IMAGE_NAMESPACE ?= paperclipinc
+
 .PHONY: verify-signing
 verify-signing: ## Verify the latest published release is Cosign-signed and SBOM-attested.
-	@VERSION=$$(gh release view --repo paperclipinc/openclaw-operator --json tagName --jq .tagName); \
-	IMAGE="ghcr.io/paperclipinc/openclaw-operator:$${VERSION}"; \
+	@VERSION=$$(gh release view --repo stubbi/openclaw-operator --json tagName --jq .tagName); \
+	IMAGE="ghcr.io/$(IMAGE_NAMESPACE)/openclaw-operator:$${VERSION}"; \
 	echo "Verifying $${IMAGE}..."; \
 	cosign verify "$${IMAGE}" \
-	  --certificate-identity-regexp 'https://github.com/paperclipinc/openclaw-operator/.github/workflows/.*' \
+	  --certificate-identity-regexp '$(SIGNING_IDENTITY_REGEXP)' \
 	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::signature verification failed for $${IMAGE}"; exit 1; }; \
 	echo "Verifying SBOM attestation..."; \
 	cosign verify-attestation "$${IMAGE}" --type spdxjson \
-	  --certificate-identity-regexp 'https://github.com/paperclipinc/openclaw-operator/.github/workflows/.*' \
+	  --certificate-identity-regexp '$(SIGNING_IDENTITY_REGEXP)' \
 	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::SBOM attestation verification failed for $${IMAGE}"; exit 1; }; \
 	echo "OK: $${IMAGE} is signed and SBOM-attested."
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter.
+lint: test-lint-policy ## Run golangci-lint and its policy regression checks.
 	$(GOLANGCI_LINT) run
+
+.PHONY: test-lint-policy
+test-lint-policy: golangci-lint ## Verify naming and receiver checks with the repository lint config.
+	bash hack/check-lint-policy.sh "$(GOLANGCI_LINT)"
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.
@@ -213,14 +228,14 @@ KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.17.2
 ENVTEST_VERSION ?= release-0.19
-GOLANGCI_LINT_VERSION ?= v1.64.5
+GOLANGCI_LINT_VERSION ?= v2.15.0
 OPERATOR_SDK_VERSION ?= v1.38.0
 
 .PHONY: kustomize
@@ -240,8 +255,10 @@ $(ENVTEST): $(LOCALBIN)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+$(GOLANGCI_LINT): | $(LOCALBIN)
+	# Use official binaries built with a supported Go toolchain, including on Go 1.25.
+	# The versioned directory avoids reusing an incompatible cached v1 binary.
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b "$(dir $(GOLANGCI_LINT))" $(GOLANGCI_LINT_VERSION)
 
 .PHONY: operator-sdk
 operator-sdk: $(OPERATOR_SDK) ## Download operator-sdk locally if necessary.

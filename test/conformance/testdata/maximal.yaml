@@ -5,13 +5,14 @@ metadata:
 spec:
   image:
     repository: ghcr.io/openclaw/openclaw
-    tag: v1.0.0
+    tag: latest
     pullPolicy: IfNotPresent
   config:
     raw:
       agents:
         defaults:
-          sandbox: true
+          sandbox:
+            mode: all
   resources:
     requests:
       cpu: 500m
