@@ -101,11 +101,14 @@ func readinessDiagnostics(ctx context.Context, c client.Client, ns, name string)
 		lines = append(lines, fmt.Sprintf("pod status unavailable: %v", err))
 	} else {
 		lines = append(lines, fmt.Sprintf("pods in test namespace: %d", len(pods.Items)))
-		for _, pod := range pods.Items {
+		for i := range pods.Items {
+			pod := &pods.Items[i]
 			lines = append(lines, fmt.Sprintf("pod %s phase=%s conditions=%+v", pod.Name, pod.Status.Phase, pod.Status.Conditions))
-			statuses := append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...)
-			for _, status := range statuses {
-				lines = append(lines, fmt.Sprintf("container %s state=%+v", status.Name, status.State))
+			for _, statuses := range [][]corev1.ContainerStatus{pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses} {
+				for j := range statuses {
+					status := &statuses[j]
+					lines = append(lines, fmt.Sprintf("container %s state=%+v", status.Name, status.State))
+				}
 			}
 		}
 	}
@@ -114,7 +117,8 @@ func readinessDiagnostics(ctx context.Context, c client.Client, ns, name string)
 		lines = append(lines, fmt.Sprintf("PVC status unavailable: %v", err))
 	} else {
 		lines = append(lines, fmt.Sprintf("PVCs in test namespace: %d", len(claims.Items)))
-		for _, claim := range claims.Items {
+		for i := range claims.Items {
+			claim := &claims.Items[i]
 			lines = append(lines, fmt.Sprintf("PVC %s phase=%s conditions=%+v", claim.Name, claim.Status.Phase, claim.Status.Conditions))
 		}
 	}
