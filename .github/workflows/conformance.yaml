@@ -14,6 +14,7 @@ on:
 
 env:
   GO_VERSION: '1.27.3'
+  CONFORMANCE_FULL: '1'
 
 jobs:
   negative:
@@ -24,10 +25,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '${{ env.GO_VERSION }}' }
+      - name: Select job-owned kubeconfig
+        run: |
+          umask 077
+          config_dir=$(mktemp -d "${RUNNER_TEMP}/openclaw-conformance-${GITHUB_JOB}.XXXXXX")
+          printf 'KUBECONFIG=%s/config\n' "$config_dir" >> "$GITHUB_ENV"
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
           config: hack/kind-config.yaml
+          kubeconfig: ${{ env.KUBECONFIG }}
       - uses: azure/setup-helm@v4
       - run: make docker-build IMG=openclaw-operator:dev
       - run: make conformance-install IMG=openclaw-operator:dev CONFORMANCE_KIND_CLUSTER=openclaw-conformance
@@ -41,10 +48,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '${{ env.GO_VERSION }}' }
+      - name: Select job-owned kubeconfig
+        run: |
+          umask 077
+          config_dir=$(mktemp -d "${RUNNER_TEMP}/openclaw-conformance-${GITHUB_JOB}.XXXXXX")
+          printf 'KUBECONFIG=%s/config\n' "$config_dir" >> "$GITHUB_ENV"
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
           config: hack/kind-config.yaml
+          kubeconfig: ${{ env.KUBECONFIG }}
       - uses: azure/setup-helm@v4
       - run: make docker-build IMG=openclaw-operator:dev
       - run: make conformance-install IMG=openclaw-operator:dev CONFORMANCE_KIND_CLUSTER=openclaw-conformance
@@ -58,10 +71,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '${{ env.GO_VERSION }}' }
+      - name: Select job-owned kubeconfig
+        run: |
+          umask 077
+          config_dir=$(mktemp -d "${RUNNER_TEMP}/openclaw-conformance-${GITHUB_JOB}.XXXXXX")
+          printf 'KUBECONFIG=%s/config\n' "$config_dir" >> "$GITHUB_ENV"
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
           config: hack/kind-config.yaml
+          kubeconfig: ${{ env.KUBECONFIG }}
       - uses: azure/setup-helm@v4
       - run: make docker-build IMG=openclaw-operator:dev
       - run: make conformance-install IMG=openclaw-operator:dev CONFORMANCE_KIND_CLUSTER=openclaw-conformance
@@ -75,10 +94,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '${{ env.GO_VERSION }}' }
+      - name: Select job-owned kubeconfig
+        run: |
+          umask 077
+          config_dir=$(mktemp -d "${RUNNER_TEMP}/openclaw-conformance-${GITHUB_JOB}.XXXXXX")
+          printf 'KUBECONFIG=%s/config\n' "$config_dir" >> "$GITHUB_ENV"
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
           config: hack/kind-config.yaml
+          kubeconfig: ${{ env.KUBECONFIG }}
       - uses: azure/setup-helm@v4
       - run: make docker-build IMG=openclaw-operator:dev
       - run: make conformance-install IMG=openclaw-operator:dev CONFORMANCE_KIND_CLUSTER=openclaw-conformance
@@ -92,10 +117,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '${{ env.GO_VERSION }}' }
+      - name: Select job-owned kubeconfig
+        run: |
+          umask 077
+          config_dir=$(mktemp -d "${RUNNER_TEMP}/openclaw-conformance-${GITHUB_JOB}.XXXXXX")
+          printf 'KUBECONFIG=%s/config\n' "$config_dir" >> "$GITHUB_ENV"
       - uses: helm/kind-action@v1
         with:
           cluster_name: openclaw-conformance
           config: hack/kind-config.yaml
+          kubeconfig: ${{ env.KUBECONFIG }}
       - uses: azure/setup-helm@v4
       - run: make docker-build IMG=openclaw-operator:dev
       - run: make conformance-install IMG=openclaw-operator:dev CONFORMANCE_KIND_CLUSTER=openclaw-conformance

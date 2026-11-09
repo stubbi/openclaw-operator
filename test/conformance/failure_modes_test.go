@@ -34,7 +34,7 @@ metadata:
 spec:
   image:
     repository: ghcr.io/openclaw/openclaw
-    tag: v1.0.0
+    tag: latest
   resources:
     limits:
       cpu: "2"
