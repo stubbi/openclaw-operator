@@ -146,7 +146,8 @@ IMAGE_NAMESPACE ?= paperclipinc
 
 .PHONY: verify-signing
 verify-signing: ## Verify the latest published release is Cosign-signed and SBOM-attested.
-	@VERSION=$$(gh release view --repo stubbi/openclaw-operator --json tagName --jq .tagName); \
+	@VERSION=$$(gh release view --repo stubbi/openclaw-operator --json tagName --jq .tagName) || { echo "::error::failed to resolve the latest release tag"; exit 1; }; \
+	[ -n "$${VERSION}" ] || { echo "::error::latest release tag is empty"; exit 1; }; \
 	IMAGE="ghcr.io/$(IMAGE_NAMESPACE)/openclaw-operator:$${VERSION}"; \
 	echo "Verifying $${IMAGE}..."; \
 	cosign verify "$${IMAGE}" \
@@ -157,6 +158,10 @@ verify-signing: ## Verify the latest published release is Cosign-signed and SBOM
 	  --certificate-identity-regexp '$(SIGNING_IDENTITY_REGEXP)' \
 	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::SBOM attestation verification failed for $${IMAGE}"; exit 1; }; \
 	echo "OK: $${IMAGE} is signed and SBOM-attested."
+
+.PHONY: test-verify-signing
+test-verify-signing: ## Test release lookup and workflow failure handling (requires PyYAML).
+	python3 hack/test-verify-signing.py
 
 .PHONY: lint
 lint: test-lint-policy ## Run golangci-lint and its policy regression checks.
