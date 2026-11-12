@@ -272,12 +272,9 @@ func buildContainers(instance *openclawv1alpha1.OpenClawInstance, gatewayTokenSe
 		containers = append(containers, buildWebTerminalContainer(instance))
 	}
 
-	// Add OTel Collector sidecar when metrics are enabled.
-	// The collector receives OTLP metrics from OpenClaw and exposes a
-	// Prometheus scrape endpoint on the configured metrics port.
-	if IsMetricsEnabled(instance) {
-		containers = append(containers, buildOTelCollectorContainer(instance))
-	}
+	// The OTel Collector is a native sidecar (init container with
+	// restartPolicy: Always) so it outlives the gateway on pod termination.
+	// See buildInitContainers.
 
 	// Add custom sidecars
 	containers = append(containers, instance.Spec.Sidecars...)
@@ -684,6 +681,18 @@ func buildInitContainers(instance *openclawv1alpha1.OpenClawInstance, externalWo
 	// Ollama model-pulling init container (only if enabled and models are specified)
 	if instance.Spec.Ollama.Enabled && len(instance.Spec.Ollama.Models) > 0 {
 		initContainers = append(initContainers, buildOllamaModelPullInitContainer(instance))
+	}
+
+	// OTel Collector native sidecar, when metrics are enabled. It receives
+	// OTLP metrics from OpenClaw and exposes a Prometheus scrape endpoint on
+	// the configured metrics port. As a native sidecar it is started before
+	// the main containers and stopped only after they have exited, so the
+	// gateway's final metrics flush on shutdown still reaches it instead of
+	// retrying a refused 127.0.0.1:4318 until the shutdown budget runs out.
+	if IsMetricsEnabled(instance) {
+		collector := buildOTelCollectorContainer(instance)
+		collector.RestartPolicy = Ptr(corev1.ContainerRestartPolicyAlways)
+		initContainers = append(initContainers, collector)
 	}
 
 	// Chromium native sidecar (K8s 1.28+): starts before main containers and
