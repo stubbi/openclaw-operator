@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0](https://github.com/stubbi/openclaw-operator/compare/v0.40.0...v0.41.0) (2026-11-12)
+
+
+### Features
+
+* add integrity-pinned verified plugin installations ([#610](https://github.com/stubbi/openclaw-operator/issues/610)) ([5f603af](https://github.com/stubbi/openclaw-operator/commit/5f603afc4ac00f1de34a2711df648afde5350161))
+* allow opting out of unrestricted HTTPS egress ([#611](https://github.com/stubbi/openclaw-operator/issues/611)) ([bb2e25e](https://github.com/stubbi/openclaw-operator/commit/bb2e25ed22ac0050b5d48fd459decd64b9344dda))
+* configure plugin installer resources and isolation ([#622](https://github.com/stubbi/openclaw-operator/issues/622)) ([19a55e3](https://github.com/stubbi/openclaw-operator/commit/19a55e306be860b6988dffd7ca061f18dc7c7de0))
+
+
+### Bug Fixes
+
+* bound pre-update backups and expose transfer controls ([#632](https://github.com/stubbi/openclaw-operator/issues/632)) ([8d93026](https://github.com/stubbi/openclaw-operator/commit/8d930266ca7f0ac58979c1ec393320450f8835f3))
+* chown the data volume root to the pod UID before OpenClaw starts ([#607](https://github.com/stubbi/openclaw-operator/issues/607)) ([#608](https://github.com/stubbi/openclaw-operator/issues/608)) ([3551d50](https://github.com/stubbi/openclaw-operator/commit/3551d50631db1358129507f52081ca23597d2dee))
+* **ci:** preserve signing verification failures ([#654](https://github.com/stubbi/openclaw-operator/issues/654)) ([a6a62eb](https://github.com/stubbi/openclaw-operator/commit/a6a62eb91200503f314e6d95c3ffba022efbee2c))
+* **deps:** build and test with patched Go 1.27.4 ([#655](https://github.com/stubbi/openclaw-operator/issues/655)) ([54072f0](https://github.com/stubbi/openclaw-operator/commit/54072f0f7f428c5ea0abe954d17c09418a76047d))
+* **deps:** update OpenTelemetry for exporter logging advisory ([#653](https://github.com/stubbi/openclaw-operator/issues/653)) ([c507de9](https://github.com/stubbi/openclaw-operator/commit/c507de97f1e279e3609189e4c0e49abd28634320))
+* execute conformance checks in CI ([#649](https://github.com/stubbi/openclaw-operator/issues/649)) ([3cf1926](https://github.com/stubbi/openclaw-operator/commit/3cf19262576e349d696d3d993d68603ed9b4abd7))
+* give the main container a sticky /tmp ([#623](https://github.com/stubbi/openclaw-operator/issues/623)) ([9eaecf7](https://github.com/stubbi/openclaw-operator/commit/9eaecf75c3648a510772a665db11380b674f5c98))
+* honor effective non-root setting in tmp init helper ([#640](https://github.com/stubbi/openclaw-operator/issues/640)) ([7b334ed](https://github.com/stubbi/openclaw-operator/commit/7b334ed9e3166641c773e245a737044330b8233e))
+* preserve sticky tmp during plugin installation ([#616](https://github.com/stubbi/openclaw-operator/issues/616)) ([02d4a6d](https://github.com/stubbi/openclaw-operator/commit/02d4a6d483459533c11b517d4ca28517df3fc686))
+* repair gateway uv symlinks during startup ([#648](https://github.com/stubbi/openclaw-operator/issues/648)) ([05fbf31](https://github.com/stubbi/openclaw-operator/commit/05fbf3154eec057cbbb36494c08117a439319013))
+* restore private credential modes after fsGroup ([#634](https://github.com/stubbi/openclaw-operator/issues/634)) ([0a07551](https://github.com/stubbi/openclaw-operator/commit/0a0755125f70c1fcafbd749a6ecc2e0981dbddbd))
+* stop tests when envtest setup fails ([#645](https://github.com/stubbi/openclaw-operator/issues/645)) ([90b1ff4](https://github.com/stubbi/openclaw-operator/commit/90b1ff4a944234e614baf537084bba99c812de46))
+* update Go tooling and CI to Go 1.27.3 ([#641](https://github.com/stubbi/openclaw-operator/issues/641)) ([26ae75c](https://github.com/stubbi/openclaw-operator/commit/26ae75cbae3087d8a1e189b5538c5b640e1f9cbd))
+* use effective gateway UID for data ownership and initialization ([#619](https://github.com/stubbi/openclaw-operator/issues/619)) ([d2dd42a](https://github.com/stubbi/openclaw-operator/commit/d2dd42a1642a18e28cf038b94745be7196a601f3))
+
 ## [0.40.0](https://github.com/paperclipinc/openclaw-operator/compare/v0.39.0...v0.40.0) (2026-09-06)
 
 

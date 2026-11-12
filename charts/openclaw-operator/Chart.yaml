@@ -4,8 +4,8 @@ description: >-
   A Kubernetes operator for deploying and managing OpenClaw AI assistant
   instances
 type: application
-version: 0.40.0
-appVersion: 0.40.0
+version: 0.41.0
+appVersion: 0.41.0
 keywords:
   - kubernetes
   - operator
@@ -16,7 +16,8 @@ keywords:
   - automation
   - agent
 home: https://github.com/stubbi/openclaw-operator
-icon: https://raw.githubusercontent.com/stubbi/openclaw-operator/main/docs/images/icon.svg
+icon: >-
+  https://raw.githubusercontent.com/stubbi/openclaw-operator/main/docs/images/icon.svg
 sources:
   - https://github.com/paperclipinc/openclaw-operator
 maintainers:
@@ -69,7 +70,7 @@ annotations:
             size: 10Gi
   artifacthub.io/images: |
     - name: openclaw-operator
-      image: ghcr.io/paperclipinc/openclaw-operator:v0.40.0 # x-release-please-version
+      image: ghcr.io/paperclipinc/openclaw-operator:v0.41.0 # x-release-please-version
   artifacthub.io/changes: |
     - kind: added
       description: Helm chart OCI artifact is now cosign-signed (keyless)
