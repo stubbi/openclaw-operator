@@ -4749,8 +4749,8 @@ func TestBuildStatefulSet_KubernetesDefaults(t *testing.T) {
 	if podSpec.SchedulerName != corev1.DefaultSchedulerName {
 		t.Errorf("SchedulerName = %v, want %v", podSpec.SchedulerName, corev1.DefaultSchedulerName)
 	}
-	if podSpec.TerminationGracePeriodSeconds == nil || *podSpec.TerminationGracePeriodSeconds != 30 {
-		t.Errorf("TerminationGracePeriodSeconds = %v, want 30", podSpec.TerminationGracePeriodSeconds)
+	if podSpec.TerminationGracePeriodSeconds == nil || *podSpec.TerminationGracePeriodSeconds != 360 {
+		t.Errorf("TerminationGracePeriodSeconds = %v, want 360", podSpec.TerminationGracePeriodSeconds)
 	}
 
 	// Container defaults
@@ -4771,6 +4771,33 @@ func TestBuildStatefulSet_KubernetesDefaults(t *testing.T) {
 	}
 	if main.StartupProbe.SuccessThreshold != 1 {
 		t.Errorf("StartupProbe.SuccessThreshold = %d, want 1", main.StartupProbe.SuccessThreshold)
+	}
+}
+
+func TestBuildStatefulSet_TerminationGracePeriodSeconds(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		grace *int64
+		want  int64
+	}{
+		{name: "omitted", want: 360},
+		{name: "immediate", grace: Ptr(int64(0)), want: 0},
+		{name: "one second", grace: Ptr(int64(1)), want: 1},
+		{name: "legacy grace", grace: Ptr(int64(30)), want: 30},
+		{name: "longer grace", grace: Ptr(int64(600)), want: 600},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := newTestInstance("termination-grace")
+			instance.Spec.TerminationGracePeriodSeconds = tt.grace
+			sts := BuildStatefulSet(instance, "", nil, nil, nil)
+			got := sts.Spec.Template.Spec.TerminationGracePeriodSeconds
+			if got == nil {
+				t.Fatal("pod termination grace period is nil")
+			}
+			if *got != tt.want {
+				t.Errorf("pod termination grace period = %d, want %d", *got, tt.want)
+			}
+		})
 	}
 }
 

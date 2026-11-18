@@ -308,6 +308,38 @@ The image and resource fields are optional. Omit them to retain the defaults abo
 - **Warning:** Do not set `gateway.bind: loopback` in your config JSON when the proxy is disabled - the gateway will only listen on `127.0.0.1` with nothing forwarding external traffic, making the pod unreachable. The operator emits a `GatewayBindConflict` warning event if this misconfiguration is detected.
 - **TLS:** When the proxy is disabled, the gateway serves plaintext `ws://` on `0.0.0.0`. Ensure your replacement proxy or Ingress handles TLS termination to avoid exposing unencrypted WebSocket traffic (CWE-319).
 
+### Pod termination grace period
+
+Instance pods default to a **360-second** termination grace period. Set
+`spec.terminationGracePeriodSeconds` to override it per instance:
+
+```yaml
+spec:
+  terminationGracePeriodSeconds: 600
+```
+
+Omitting the field (or setting it to `null`) uses 360 seconds. Any non-negative
+integer is accepted, including an explicit `0`, which requests immediate
+termination without graceful shutdown. Shorter values can interrupt cleanup.
+
+The default allows OpenClaw's 330-second service stop budget plus 30 seconds for
+signal delivery and exit overhead. This is an allowance, not a mandatory wait:
+pods can terminate as soon as their containers exit. In OpenClaw v2026.11.2,
+normal SIGTERM/SIGINT stops cap active-work drain at 20 seconds while retaining
+a 325-second total shutdown/cleanup deadline. In-process restarts use separate
+drain rules; this pod setting does not change runtime admission, cancellation,
+or restart behavior, and does not guarantee completion of every restart path.
+
+**Upgrade impact:** earlier operator versions hard-code 30 seconds. Upgrading
+the operator and CRDs changes the StatefulSet pod template to 360 seconds on
+reconciliation and can roll existing running instances. The old pod still
+terminates under its existing grace period; the new value applies to replacement
+pods. Changing an explicit override also rolls the workload. Plan for this
+disruption and potentially longer termination during rollouts, suspension, and
+deletion. An explicit `30` retains the old timeout, with its shorter cleanup
+allowance. Install the updated CRD before applying an override; an older schema
+may reject or prune the field, and an older operator does not honor it.
+
 ### Disk-aware readiness
 
 By default the readiness probe is an HTTP `GET /readyz` against the gateway. For PVC-backed instances, `/readyz` can stay green while the workspace volume is full or read-only (ENOSPC), so the pod keeps receiving traffic while workspace writes fail. Enable the opt-in disk-aware readiness guard to turn the readiness probe into an exec check that combines the gateway `/readyz` signal with a workspace writability and free-space check:

@@ -46,6 +46,11 @@ func BuildStatefulSet(instance *openclawv1alpha1.OpenClawInstance, gatewayTokenS
 
 	gwSecretName := gatewayTokenSecretName
 
+	terminationGracePeriodSeconds := int64(360)
+	if instance.Spec.TerminationGracePeriodSeconds != nil {
+		terminationGracePeriodSeconds = *instance.Spec.TerminationGracePeriodSeconds
+	}
+
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      StatefulSetName(instance),
@@ -89,7 +94,7 @@ func BuildStatefulSet(instance *openclawv1alpha1.OpenClawInstance, gatewayTokenS
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
 					SchedulerName:                 corev1.DefaultSchedulerName,
-					TerminationGracePeriodSeconds: Ptr(int64(30)),
+					TerminationGracePeriodSeconds: Ptr(terminationGracePeriodSeconds),
 				},
 			},
 		},
