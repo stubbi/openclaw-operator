@@ -76,6 +76,8 @@ func TestDataWriterInitContainersUseMainUID(t *testing.T) {
 					if c.SecurityContext != nil {
 						t.Error("custom init container must retain its security context")
 					}
+				case "otel-collector":
+					// Native sidecar; does not use the data volume.
 				default:
 					seen[c.Name] = true
 					if c.SecurityContext == nil || c.SecurityContext.RunAsUser == nil || *c.SecurityContext.RunAsUser != 2000 {
