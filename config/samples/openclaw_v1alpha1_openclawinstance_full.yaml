@@ -7,6 +7,10 @@ metadata:
   labels:
     environment: production
 spec:
+  # Pod termination grace period in seconds (default: 360; minimum: 0).
+  # Zero skips graceful shutdown. Changes trigger a rolling update.
+  terminationGracePeriodSeconds: 360
+
   # Container image configuration
   image:
     repository: ghcr.io/openclaw/openclaw

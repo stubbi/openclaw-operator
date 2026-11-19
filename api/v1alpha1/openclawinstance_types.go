@@ -123,6 +123,15 @@ type OpenClawInstanceSpec struct {
 	// +optional
 	ShareProcessNamespace *bool `json:"shareProcessNamespace,omitempty"`
 
+	// TerminationGracePeriodSeconds is the pod termination grace period in seconds.
+	// Defaults to 360 seconds to allow gateway shutdown and cleanup.
+	// Zero requests immediate termination without graceful shutdown.
+	// Changes update the pod template and trigger a rolling update.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=360
+	// +optional
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+
 	// Storage specifies persistent storage configuration
 	// +optional
 	Storage StorageSpec `json:"storage,omitempty"`

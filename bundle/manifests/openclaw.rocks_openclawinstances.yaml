@@ -9989,6 +9989,16 @@ spec:
                         type: object
                     type: object
                 type: object
+              terminationGracePeriodSeconds:
+                default: 360
+                description: |-
+                  TerminationGracePeriodSeconds is the pod termination grace period in seconds.
+                  Defaults to 360 seconds to allow gateway shutdown and cleanup.
+                  Zero requests immediate termination without graceful shutdown.
+                  Changes update the pod template and trigger a rolling update.
+                format: int64
+                minimum: 0
+                type: integer
               verifiedPlugins:
                 description: |-
                   VerifiedPlugins installs exact public npm artifacts after checking registry

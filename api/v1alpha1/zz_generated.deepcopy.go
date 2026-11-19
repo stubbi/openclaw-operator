@@ -1383,6 +1383,11 @@ func (in *OpenClawInstanceSpec) DeepCopyInto(out *OpenClawInstanceSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.TerminationGracePeriodSeconds != nil {
+		in, out := &in.TerminationGracePeriodSeconds, &out.TerminationGracePeriodSeconds
+		*out = new(int64)
+		**out = **in
+	}
 	in.Storage.DeepCopyInto(&out.Storage)
 	in.Chromium.DeepCopyInto(&out.Chromium)
 	in.Tailscale.DeepCopyInto(&out.Tailscale)
